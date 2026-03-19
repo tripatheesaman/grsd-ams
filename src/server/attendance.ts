@@ -800,7 +800,10 @@ export async function leaveSummary(inputPath: string, departmentStaffIds: string
 
 async function sectionMap(departmentId?: string) {
   const rows = await prisma.staffDetail.findMany({
-    where: departmentId ? { departmentId: Number(departmentId) } : undefined,
+    where: {
+      ...(departmentId ? { departmentId: Number(departmentId) } : {}),
+      sectionId: { not: null },
+    },
     select: {
       staffid: true,
       typeOfEmployment: true,
@@ -859,10 +862,12 @@ async function getTemplateStaff(staffType: "detailed" | "monthly", departmentId?
     ? {
       typeOfEmployment: { in: ["permanent", "contract"] },
       ...(departmentId ? { departmentId: Number(departmentId) } : {}),
+      sectionId: { not: null },
     }
     : {
       typeOfEmployment: "monthly wages",
       ...(departmentId ? { departmentId: Number(departmentId) } : {}),
+      sectionId: { not: null },
     };
   const rows = await prisma.staffDetail.findMany({
     where,

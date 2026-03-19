@@ -15,7 +15,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
   let staffIds: string[] = [];
   if (!user.isSuperuser && user.departmentId) {
-    const staff = await prisma.staffDetail.findMany({ where: { departmentId: user.departmentId }, select: { staffid: true } });
+    const staff = await prisma.staffDetail.findMany({
+      where: { departmentId: user.departmentId, sectionId: { not: null } },
+      select: { staffid: true },
+    });
     staffIds = staff.map((s) => s.staffid);
   }
 

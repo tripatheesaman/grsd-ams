@@ -39,7 +39,7 @@ export default async function AttendancePage({ searchParams }: PageProps) {
 
   const staffScope = !user.isSuperuser && user.departmentId ? { departmentId: user.departmentId } : undefined;
   const staffRows = await prisma.staffDetail.findMany({
-    where: staffScope,
+    where: { ...(staffScope ?? {}), sectionId: { not: null } },
     include: { section: { select: { name: true } } },
     orderBy: { staffid: "asc" },
   });

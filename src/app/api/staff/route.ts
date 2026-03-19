@@ -23,24 +23,51 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url);
   const q = url.searchParams.get("q")?.trim() ?? "";
+  const employeeName = url.searchParams.get("employeeName")?.trim() ?? "";
+  const staffId = url.searchParams.get("staffId")?.trim() ?? "";
+  const designation = url.searchParams.get("designation")?.trim() ?? "";
+  const sectionId = url.searchParams.get("sectionId")?.trim() ?? "";
+  const typeOfEmployment = url.searchParams.get("typeOfEmployment")?.trim() ?? "";
+  const status = url.searchParams.get("status")?.trim() ?? "";
 
   const where = staffScopedWhere(user);
+  const filters: Array<Record<string, unknown>> = [where];
+  if (q) {
+    filters.push({
+      OR: [
+        { staffid: { contains: q, mode: "insensitive" } },
+        { name: { contains: q, mode: "insensitive" } },
+        { designation: { contains: q, mode: "insensitive" } },
+        { section: { name: { contains: q, mode: "insensitive" } } },
+      ],
+    });
+  }
+  if (employeeName) {
+    filters.push({ name: { contains: employeeName, mode: "insensitive" } });
+  }
+  if (staffId) {
+    filters.push({ staffid: { contains: staffId, mode: "insensitive" } });
+  }
+  if (designation) {
+    filters.push({ designation: { contains: designation, mode: "insensitive" } });
+  }
+  if (sectionId) {
+    const parsed = Number.parseInt(sectionId, 10);
+    if (Number.isFinite(parsed)) {
+      filters.push({ sectionId: parsed });
+    }
+  }
+  if (typeOfEmployment) {
+    filters.push({ typeOfEmployment: { equals: typeOfEmployment, mode: "insensitive" } });
+  }
+  if (status === "active") {
+    filters.push({ sectionId: { not: null } });
+  } else if (status === "inactive") {
+    filters.push({ sectionId: null });
+  }
+
   const staff = await prisma.staffDetail.findMany({
-    where: q
-      ? {
-          AND: [
-            where,
-            {
-              OR: [
-                { staffid: { contains: q, mode: "insensitive" } },
-                { name: { contains: q, mode: "insensitive" } },
-                { designation: { contains: q, mode: "insensitive" } },
-                { section: { name: { contains: q, mode: "insensitive" } } },
-              ],
-            },
-          ],
-        }
-      : where,
+    where: { AND: filters },
     include: { section: true, department: true },
     orderBy: { staffid: "asc" },
   });
