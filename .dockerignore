@@ -1,0 +1,14 @@
+.git
+.gitignore
+build/
+dist/
+node_modules/
+*.sqlite3
+media/uploads/*
+media/processed/*
+.vscode/
+.idea/
+*.log
+Dockerfile*
+docker-compose*.yml
+

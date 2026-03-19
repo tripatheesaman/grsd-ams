@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body {
+      width: 320px;
+      padding: 16px;
+      font-family: system-ui, -apple-system, sans-serif;
+      margin: 0;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .logo {
+      width: 32px;
+      height: 32px;
+    }
+    .title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #0f172a;
+    }
+    .subtitle {
+      font-size: 11px;
+      color: #64748b;
+    }
+    .input-group {
+      margin-bottom: 12px;
+    }
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: #334155;
+      margin-bottom: 6px;
+    }
+    input {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      font-size: 13px;
+      box-sizing: border-box;
+    }
+    input:focus {
+      outline: none;
+      border-color: #093694;
+      box-shadow: 0 0 0 3px rgba(9, 54, 148, 0.1);
+    }
+    .btn {
+      width: 100%;
+      padding: 10px;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #d32c3c, #ea4b5a);
+      color: white;
+      box-shadow: 0 4px 12px rgba(211, 44, 60, 0.3);
+    }
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 16px rgba(211, 44, 60, 0.4);
+    }
+    .btn-primary:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .status {
+      margin-top: 12px;
+      padding: 8px;
+      border-radius: 6px;
+      font-size: 12px;
+      text-align: center;
+      display: none;
+    }
+    .status.success {
+      background: #d1fae5;
+      color: #065f46;
+      display: block;
+    }
+    .status.error {
+      background: #fee2e2;
+      color: #991b1b;
+      display: block;
+    }
+    .status.info {
+      background: #dbeafe;
+      color: #1e40af;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <img src="icon48.png" class="logo" alt="NAC">
+    <div>
+      <div class="title">HRMS SYNC</div>
+      <div class="subtitle">Admin Management</div>
+    </div>
+  </div>
+  
+  <div class="input-group">
+    <label for="apiUrl">AMS URL</label>
+    <input type="text" id="apiUrl" placeholder="https://your-app.com" />
+  </div>
+  
+  <button id="saveBtn" class="btn btn-primary">Save URL</button>
+  <button id="syncBtn" class="btn btn-primary" style="margin-top: 8px; display: none;">Sync This Page</button>
+  
+  <div id="status" class="status"></div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>
