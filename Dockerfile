@@ -20,6 +20,10 @@
     ENV NODE_ENV=production
     
     COPY --from=builder /app ./
+    # Next's `output: "standalone"` serves static assets from:
+    #   .next/standalone/.next/static
+    # Copy them there explicitly, otherwise `_next/static/*` returns 404.
+    COPY --from=builder /app/.next/static ./.next/standalone/.next/static
     
     EXPOSE 3000
     CMD ["node", ".next/standalone/server.js"]
