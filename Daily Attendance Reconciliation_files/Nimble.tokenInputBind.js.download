@@ -1,0 +1,463 @@
+﻿var CommonUrlService = '/Common/WebServices/';
+var EmployeeServices = '/Hrm/Employee/';
+var AttendanceServices = '/Attendance/Attendance/';
+
+//Multiple AutoComplete for Country
+var bindAutoCompleteCountryMultiple = function () {
+    var url = CommonUrlService + 'CountryAutoComplete';
+    $("#tokeninput-searchCountry").tokenInput(url, {
+        theme: "facebook",
+        preventDuplicates: true,
+        method: "POST",
+        onAdd: function (item) {
+            return false;
+        }
+    });
+}
+
+//Multiple AutoComplete for Employees
+var bindAutoCompleteEmployeeMultiple = function () {
+    var url = EmployeeServices + 'EmpAutoComplete';
+    $("#tokeninput-searchEmp").tokenInput(url, {
+        theme: "facebook",
+        preventDuplicates: true,
+        method: "POST",
+        minChars: 3,
+        onAdd: function (item) {
+            $('#ProjectID').val(item.ProjectID);
+            return false;
+        }
+    });
+}
+
+//Multiple AutoComplete for Supervisor
+var bindAutoCompleteSupervisorMultiple = function () {
+    var url = EmployeeServices + 'EmpAutoCompleteAll?sup=1';
+    $("#tokeninput-searchSup").tokenInput(url, {
+        theme: "facebook",
+        preventDuplicates: true,
+        method: "POST",
+        minChars: 3,
+        onAdd: function (item) {
+            // $('#ProjectID').val(item.ProjectID);
+            return false;
+        }
+    });
+}
+
+//Single AutoComplete for Supervisor
+var binAutoCompleteSupervisorSingle = function () {
+    var url = EmployeeServices + 'EmpAutoCompleteAll?sup=1';
+    $(".tokeninput-searchSup-single").tokenInput(url, {
+        theme: "facebook",
+        preventDuplicates: true,
+        method: "POST",
+        minChars: 3,
+        tokenLimit: 1,
+        onAdd: function (item) {
+            // $('#ProjectID').val(item.ProjectID);
+            return false;
+        }
+    });
+}
+
+//Single AutoComplete for Employees by Class [Sigle page has multipe auto complete so select by class]
+var bindAutoCompleteByClassForEmployeeSingle = function () {
+    var url = EmployeeServices + 'EmpAutoComplete';
+    $(".tokeninput-searchEmp-single").tokenInput(url, {
+        theme: "facebook",
+        preventDuplicates: true,
+        method: "POST",
+        minChars: 3,
+        tokenLimit: 1,
+        onAdd: function (item) {
+            return false;
+        }
+
+    });
+}
+
+//Single AutoComplete for Employees
+var bindAutoCompleteEmployeeSingle = function () {
+    var url = EmployeeServices + 'EmpAutoComplete';
+    $("#tokeninput-searchEmp-single").tokenInput(url, {
+        theme: "facebook",
+        preventDuplicates: true,
+        method: "POST",
+        minChars: 3,
+        tokenLimit: 1,
+        onAdd: function (item) {
+            return false;
+        }
+
+    });
+}
+
+//Single AutoComplete for Working Employees with permission
+var bindAutoCompleteWorkingEmployeeSinglePermission = function () {
+    var url = EmployeeServices + 'EmpAutoComplete?w=1';
+    $(".tokeninput-searchEmp-single-working").tokenInput(url, {
+        theme: "facebook",
+        preventDuplicates: true,
+        method: "POST",
+        minChars: 3,
+        tokenLimit: 1,
+        onAdd: function (item) {
+            return false;
+        }
+    });
+}
+
+//Single AutoComplete for Working Employees without permission
+var bindAutoCompleteWorkingEmployeeSingleAll = function () {
+    var url = EmployeeServices + 'EmpAutoCompleteAll?w=1';
+    $(".tokeninput-searchEmp-single-all").tokenInput(url, {
+        theme: "facebook",
+        preventDuplicates: true,
+        method: "POST",
+        minChars: 3,
+        tokenLimit: 1,
+        onAdd: function (item) {
+            return false;
+        }
+    });
+}
+
+//Single AutoComplete for Working Employees without permission
+var bindAutoCompleteWorkingEmployeeMultipleAll = function () {
+    var url = EmployeeServices + 'EmpAutoCompleteAll?w=1';
+    $(".tokeninput-searchEmp-all").tokenInput(url, {
+        theme: "facebook",
+        preventDuplicates: true,
+        method: "POST",
+        minChars: 3,
+        onAdd: function (item) {
+            return false;
+        }
+    });
+}
+
+//Single AutoComplete for Retired Employees without permission
+var bindAutoCompleteRetiredEmployeeSingleAll = function () {
+    var url = EmployeeServices + 'EmpAutoCompleteAll?r=1';
+    $(".tokeninput-searchEmp-single-a-retired").tokenInput(url, {
+        theme: "facebook",
+        preventDuplicates: true,
+        method: "POST",
+        minChars: 3,
+        tokenLimit: 1,
+        onAdd: function (item) {
+            return false;
+        }
+    });
+}
+
+//Single AutoComplete for Retired Employees with permission
+var bindAutoCompleteRetiredEmployeeSinglePermission = function () {
+    var url = EmployeeServices + 'EmpAutoComplete?r=1';
+    $(".tokeninput-searchEmp-single-p-retired").tokenInput(url, {
+        theme: "facebook",
+        preventDuplicates: true,
+        method: "POST",
+        minChars: 3,
+        tokenLimit: 1,
+        onAdd: function (item) {
+            return false;
+        }
+    });
+}
+
+//multiple AutoComplete for Working Employees or All based on Checked on Resigned check box with permission
+var bindAutoCompleteWithCheckboxEmployeeMultiplePermission = function () {
+    var url = "";
+    function getUrl() {
+        var isResigned = $(".resign-chk").is(':checked');
+        if (isResigned == null || !isResigned || isResigned == false) {
+            url = EmployeeServices + 'EmpAutoComplete?w=1';
+            $(".ischeckResigned").attr('value', false);
+        }
+        else {
+            url = EmployeeServices + 'EmpAutoComplete';
+            $(".ischeckResigned").attr('value', true);
+        }
+        return url;
+    }
+
+    $(".tokeninput-searchEmp-working").tokenInput(getUrl, {
+        theme: "facebook",
+        preventDuplicates: true,
+        method: "POST",
+        minChars:3,
+        onAdd: function (item) {
+            return false;
+        }
+    });
+}
+
+//Single AutoComplete for Candiate
+var bindAutoCompleteCandidateSingle = function () {
+    var url = '/Recruitment/WebServices/' + 'CandidateAutoComplete';
+    url = url + '?isforEmp=1'
+    $("#tokeninput-searchCandidate").tokenInput(url, {
+        theme: "facebook",
+        preventDuplicates: true,
+        method: "POST",
+        minChars: 3,
+
+    });
+}
+
+//Multiple Autocomplete for EmploymentType
+var bindAutoCompleteEmploymentType = function () {
+    var url = CommonUrlService + 'EmploymentTypeAutoComplete';
+    $("#tokeninput-searchEmploymentType").tokenInput(url, {
+        theme: "facebook",
+        preventDuplicates: true,
+        method: "POST"
+    });
+}
+
+//Multiple Autocomplete for Level
+var bindAutoCompleteEmpLevel = function () {
+    var url = CommonUrlService + 'LevelAutoComplete';
+    $("#tokeninput-searchLevel").tokenInput(url, {
+        theme: "facebook",
+        preventDuplicates: true,
+        method: "POST"
+    });
+}
+
+//Multiple Autocomplete for Designation
+var bindAutoCompleteDesignation = function () {
+    var url = CommonUrlService + 'DesignationAutoComplete';
+    $("#tokeninput-searchDesignation").tokenInput(url, {
+        theme: "facebook",
+        preventDuplicates: true,
+        method: "POST"
+    });
+}
+
+//Multiple Autocomplete for Service
+var bindAutoCompleteService = function () {
+    var url = CommonUrlService + 'ServiceAutoComplete';
+    $("#tokeninput-searchService").tokenInput(url, {
+        theme: "facebook",
+        preventDuplicates: true,
+        method: "POST"
+    });
+}
+
+//Multiple Autocomplete for Service Group
+var bindAutoCompleteServiceGroup = function () {
+    var url = CommonUrlService + 'ServiceGroupAutoComplete';
+    $("#tokeninput-searchServiceGroup").tokenInput(url, {
+        theme: "facebook",
+        preventDuplicates: true,
+        method: "POST"
+    });
+}
+
+//Multiple Autocomplete for ServiceSubGroup
+var bindAutoCompleteServiceSubGroup = function () {
+    var url = CommonUrlService + 'SubGroupAutoComplete';
+    $("#tokeninput-searchServiceSubGroup").tokenInput(url, {
+        theme: "facebook",
+        preventDuplicates: true,
+        method: "POST"
+    });
+}
+
+//Multiple Autocomplete for Division
+var bindAutoCompleteDivision = function () {
+    var url = CommonUrlService + 'EmpGroup2AutoComplete';
+    $("#tokeninput-searchDivision").tokenInput(url, {
+        theme: "facebook",
+        preventDuplicates: true,
+        method: "POST"
+    });
+}
+
+//Multiple Autocomplete for Business Unit
+var bindAutoCompleteBusinessUnit = function () {
+    var url = CommonUrlService + 'EmpGroup1AutoComplete';
+    $("#tokeninput-searchBusinessUnit").tokenInput(url, {
+        theme: "facebook",
+        preventDuplicates: true,
+        method: "POST"
+    });
+}
+
+//Multiple Autocomplete for OutSource Company
+var bindAutoCompleteOutsourceCompany = function () {
+    var url = CommonUrlService + 'OutSourceCompanyAutoComplete';
+    $("#tokeninput-searchOutSourceCompany").tokenInput(url, {
+        theme: "facebook",
+        preventDuplicates: true,
+        method: "POST"
+    });
+}
+
+//Multiple Autocomplete for Shift
+var bindAutoCompleteShift = function () {
+    var url = AttendanceServices + 'ShiftAutoComplete';
+    $("#tokeninput-searchShift").tokenInput(url, {
+        theme: "facebook",
+        preventDuplicates: true,
+        method: "POST"
+    });
+}
+
+//Multiple Autocomplete for Sub Business Unit
+var bindAutoCompleteSubBusinessUnit = function () {
+    var url = CommonUrlService + 'EmpGroup1AutoComplete';
+    $("#tokeninput-searchSubBusinessUnit").tokenInput(url, {
+        theme: "facebook",
+        preventDuplicates: true,
+        method: "POST"
+    });
+}
+
+//Multiple Autocomplete for Location
+var bindAutoCompleteLocation = function () {
+    var url = CommonUrlService + 'LocationAutoComplete';
+    $("#tokeninput-searchLocation").tokenInput(url, {
+        theme: "facebook",
+        preventDuplicates: true,
+        method: "POST"
+    });
+}
+
+//Multiple Autocomplete for Location Staff
+var bindAutoCompleteStaffAdvanceLocation = function () {
+    var url = "/StaffAdvance/StaffAdvanceRequest/" + 'LocationAutoCompleteStaff';
+    $("#tokeninput-searchLocationStaff").tokenInput(url, {
+        theme: "facebook",
+        preventDuplicates: true,
+        method: "POST"
+    });
+}
+
+//Multiple Autocomplete for Branch
+var bindAutoCompleteBranch = function () {
+    var url = CommonUrlService + 'BranchAutoComplete';
+    $("#tokeninput-searchBranch").tokenInput(url, {
+        theme: "facebook",
+        preventDuplicates: true,
+        method: "POST"
+    });
+}
+
+//Multiple Autocomplete for Department
+var bindAutoCompleteDepartment = function () {
+    var url = CommonUrlService + 'DepartmentAutoComplete';
+    $("#tokeninput-searchDepartment").tokenInput(url, {
+        theme: "facebook",
+        preventDuplicates: true,
+        method: "POST"
+    });
+}
+
+//Multiple Autocomplete for SubDepartment
+var bindAutoCompleteSubDepartment = function () {
+    var url = CommonUrlService + 'UnitAutoComplete';
+    $("#tokeninput-searchSubDepartment").tokenInput(url, {
+        theme: "facebook",
+        preventDuplicates: true,
+        method: "POST"
+    });
+}
+
+//Multiple Autocomplete for RemunerationGroup
+var bindAutoCompleteRemunerationGroup = function () {
+    var url = CommonUrlService + 'RemunerationAutoComplete';
+    $("#tokeninput-searchRemuneration").tokenInput(url, {
+        theme: "facebook",
+        preventDuplicates: true,
+        method: "POST"
+    });
+}
+
+//Multiple Autocomplete for MainAllocation
+var bindAutoCompleteMainAllocation = function () {
+    var url = CommonUrlService + 'MainAllocationAutoComplete';
+    $("#tokeninput-searchMainAllocation").tokenInput(url, {
+        theme: "facebook",
+        preventDuplicates: true,
+        method: "POST"
+    });
+}
+
+//Multiple Autocomplete for SubAllocation
+var bindAutoCompleteSubAllocation = function () {
+    var url = CommonUrlService + 'SubAllocationAutoComplete';
+    $("#tokeninput-searchSubAllocation").tokenInput(url, {
+        theme: "facebook",
+        preventDuplicates: true,
+        method: "POST"
+    });
+}
+
+//Multiple Autocomplete for MinorAllocation
+var bindAutoCompleteMinorAllocation = function () {
+    var url = CommonUrlService + 'MinorAllocationAutoComplete';
+    $("#tokeninput-searchMinorAllocation").tokenInput(url, {
+        theme: "facebook",
+        preventDuplicates: true,
+        method: "POST"
+    });
+}
+
+//Multiple Autocomplete for Training
+var bindAutoCompleteTraining = function () {
+    var url = '/Common/TrainingMaster/' + 'TrainingAutoComplete';
+    $("#tokeninput-searchTraining").tokenInput(url, {
+        theme: "facebook",
+        preventDuplicates: true,
+        method: "POST"
+    });
+
+    $(".tokeninput-searchTraining").tokenInput(url, {
+        theme: "facebook",
+        preventDuplicates: true,
+        method: "POST"
+    });
+}
+
+//Binding Autocomplete functions.
+$(document).ready(function () {
+    bindAutoCompleteCountryMultiple();
+    bindAutoCompleteEmployeeMultiple();
+    bindAutoCompleteSupervisorMultiple();
+    binAutoCompleteSupervisorSingle();
+    bindAutoCompleteByClassForEmployeeSingle();
+    bindAutoCompleteEmployeeSingle();
+    bindAutoCompleteWorkingEmployeeSingleAll();
+    bindAutoCompleteWorkingEmployeeMultipleAll();
+    bindAutoCompleteRetiredEmployeeSingleAll();
+    bindAutoCompleteRetiredEmployeeSinglePermission();
+    bindAutoCompleteWithCheckboxEmployeeMultiplePermission();
+    bindAutoCompleteWorkingEmployeeSinglePermission();
+    bindAutoCompleteCandidateSingle();
+    bindAutoCompleteEmployeeSingle();
+    bindAutoCompleteEmpLevel();
+    bindAutoCompleteDesignation();
+    bindAutoCompleteService();
+    bindAutoCompleteServiceGroup();
+    bindAutoCompleteServiceSubGroup();
+    bindAutoCompleteDivision();
+    bindAutoCompleteBusinessUnit();
+    bindAutoCompleteOutsourceCompany();
+    bindAutoCompleteShift();
+    bindAutoCompleteSubBusinessUnit();
+    bindAutoCompleteLocation();
+    bindAutoCompleteStaffAdvanceLocation();
+    bindAutoCompleteBranch();
+    bindAutoCompleteDepartment();
+    bindAutoCompleteSubDepartment();
+    bindAutoCompleteRemunerationGroup();
+    bindAutoCompleteMainAllocation();
+    bindAutoCompleteSubAllocation();
+    bindAutoCompleteMinorAllocation();
+    bindAutoCompleteTraining();
+
+});

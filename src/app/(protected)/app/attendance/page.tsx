@@ -1,9 +1,12 @@
 import Link from "next/link";
+import fs from "node:fs/promises";
+import path from "node:path";
 import { requireSessionUser } from "@/server/auth";
 import { departmentScopedWhere } from "@/server/permissions";
 import { prisma } from "@/server/prisma";
 import { absoluteFromMedia } from "@/server/files";
 import { leaveSummary, previewAttendance } from "@/server/attendance";
+import LogsUploader from "@/features/files/components/LogsUploader";
 
 type TabKey = "detailed" | "leave";
 
@@ -21,6 +24,21 @@ type PageProps = {
 };
 
 const PAGE_SIZE = 25;
+const NEPALI_MONTH_NAMES = [
+  "",
+  "Baiskah",
+  "Jestha",
+  "Ashadh",
+  "Shrawan",
+  "Bhadra",
+  "Ashoj",
+  "Kartik",
+  "Mangsir",
+  "Poush",
+  "Magh",
+  "Falgun",
+  "Chaitra",
+];
 
 export default async function AttendancePage({ searchParams }: PageProps) {
   const user = await requireSessionUser();
@@ -81,6 +99,36 @@ export default async function AttendancePage({ searchParams }: PageProps) {
   });
 
   const selected = files.find((f) => f.id.toString() === fileId) ?? files[0] ?? null;
+  const parsePeriodFromAttendanceName = (relativePath: string): { year: number; month: number } | null => {
+    const base = path.basename(relativePath);
+    const m = /^attendance_(\d{4})_(\d{1,2})\.xlsx$/i.exec(base);
+    if (!m) return null;
+    const y = Number.parseInt(m[1], 10);
+    const mo = Number.parseInt(m[2], 10);
+    if (!y || !mo || mo < 1 || mo > 12) return null;
+    return { year: y, month: mo };
+  };
+  const formatRecordLabel = (relativePath: string, createdAt: Date) => {
+    const p = parsePeriodFromAttendanceName(relativePath);
+    if (!p) return new Date(createdAt).toLocaleDateString();
+    const name = NEPALI_MONTH_NAMES[p.month] || `Month ${p.month}`;
+    return `${name} ${p.year}`;
+  };
+
+  let hasLogsForSelected = false;
+  if (selected) {
+    const period = parsePeriodFromAttendanceName(selected.originalFile);
+    if (period) {
+      const logsName = `hrms_logs_${period.year}_${String(period.month).padStart(2, "0")}.xlsx`;
+      const logsPath = path.join(process.cwd(), "media", "uploads", logsName);
+      try {
+        await fs.access(logsPath);
+        hasLogsForSelected = true;
+      } catch {
+        hasLogsForSelected = false;
+      }
+    }
+  }
   let detailedColumns: string[] = [];
   let detailedRows: Record<string, unknown>[] = [];
   let leaveRows: Array<Record<string, unknown> & { section: string; canonical_staffid: string }> = [];
@@ -111,6 +159,14 @@ export default async function AttendancePage({ searchParams }: PageProps) {
     detailedColumns = detailedPayload.columns.includes("Section")
       ? detailedPayload.columns
       : [...detailedPayload.columns.slice(0, 3), "Section", ...detailedPayload.columns.slice(3)];
+
+    const hasLog = detailedRows.some((row) => {
+      const v = row.Log;
+      return typeof v === "string" ? v.trim().length > 0 : v != null;
+    });
+    if (hasLog && !detailedColumns.includes("Log")) {
+      detailedColumns.push("Log");
+    }
 
     leaveRows = leavePayload.leave_list.map((row) => {
       const norm = normalizeStaffId(row.employee_id);
@@ -232,7 +288,7 @@ export default async function AttendancePage({ searchParams }: PageProps) {
           <select id="fileId" name="fileId" defaultValue={selected?.id.toString() ?? ""} className="nac-select">
             {files.map((f) => (
               <option key={f.id.toString()} value={f.id.toString()}>
-                #{f.id.toString()} • {new Date(f.createdAt).toLocaleDateString()}
+                {formatRecordLabel(f.originalFile, f.createdAt)}
               </option>
             ))}
           </select>
@@ -241,6 +297,8 @@ export default async function AttendancePage({ searchParams }: PageProps) {
           <button className="nac-btn-primary px-4 py-2.5 text-sm">Apply Filters</button>
         </div>
       </form>
+
+      {selected ? <LogsUploader fileId={selected.id.toString()} hasLogs={hasLogsForSelected} /> : null}
 
       {currentTab === "detailed" ? (
         <div className="nac-card overflow-auto">

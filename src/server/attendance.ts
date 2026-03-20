@@ -15,6 +15,7 @@ type AttendanceRow = {
   OutTime: string;
   Status: string;
   WorkedHours: string | number;
+  Log?: string;
 };
 
 type LeaveSummaryRow = {
@@ -504,15 +505,17 @@ function processGeneralAttendance(inputPath: string): AttendanceRow[] {
 }
 
 async function loadAttendance(inputPath: string): Promise<AttendanceRow[]> {
+  let rows: AttendanceRow[];
   try {
-    return processMatrixAttendance(inputPath);
+    rows = processMatrixAttendance(inputPath);
   } catch {
     try {
-      return processLegacyAttendance(inputPath);
+      rows = processLegacyAttendance(inputPath);
     } catch {
-      return processGeneralAttendance(inputPath);
+      rows = processGeneralAttendance(inputPath);
     }
   }
+  return mergeLogsIntoAttendance(rows, inputPath);
 }
 
 function deriveDayNumber(dateText: string): number | null {
@@ -529,6 +532,150 @@ function deriveDayNumber(dateText: string): number | null {
     return null;
   }
   return day;
+}
+
+function extractPeriodFromPath(filePath: string): { year: number; month: number } | null {
+  const base = path.basename(filePath);
+  const m = /(20\d{2})[_-](\d{1,2})/.exec(base);
+  if (!m) {
+    return null;
+  }
+  const year = Number.parseInt(m[1], 10);
+  const month = Number.parseInt(m[2], 10);
+  if (!year || !month || month < 1 || month > 12) {
+    return null;
+  }
+  return { year, month };
+}
+
+function normalizeHeaderKey(value: unknown) {
+  return String(value ?? "").toLowerCase().replace(/[\s._-]+/g, "");
+}
+
+function valueByHeader(record: Record<string, unknown>, keys: string[]): unknown {
+  for (const [k, v] of Object.entries(record)) {
+    const nk = normalizeHeaderKey(k);
+    if (keys.includes(nk)) {
+      return v;
+    }
+  }
+  return "";
+}
+
+async function loadLogsForAttendance(inputPath: string) {
+  const period = extractPeriodFromPath(inputPath);
+  const logFiles: string[] = [];
+  if (period) {
+    const month = String(period.month).padStart(2, "0");
+    logFiles.push(path.join(process.cwd(), "media", "uploads", `hrms_logs_${period.year}_${month}.xlsx`));
+  } else {
+    const uploadsDir = path.join(process.cwd(), "media", "uploads");
+    try {
+      const entries = await fs.readdir(uploadsDir);
+      for (const name of entries) {
+        if (/^hrms_logs_\d{4}_\d{2}\.xlsx$/i.test(name)) {
+          logFiles.push(path.join(uploadsDir, name));
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  if (logFiles.length === 0) {
+    return new Map<string, string>();
+  }
+
+  const primaryLogPath = logFiles[0];
+  try {
+    await fs.access(primaryLogPath);
+  } catch {
+    return new Map<string, string>();
+  }
+
+  const map = new Map<string, string>();
+  const dateRe = /^(\d{4})\/(\d{1,2})\/(\d{1,2})$/;
+
+  const workbook = readWorkbookFromDisk(primaryLogPath);
+  const firstSheetName = workbook.SheetNames[0];
+  if (!firstSheetName) {
+    return map;
+  }
+  const worksheet = workbook.Sheets[firstSheetName];
+  const matrix = XLSX.utils.sheet_to_json<(string | number)[]>(worksheet, {
+    defval: "",
+    raw: false,
+    header: 1,
+  });
+  if (matrix.length === 0) {
+    return map;
+  }
+
+  let headerRowIndex = -1;
+  let dateCol = -1;
+  let empCol = -1;
+  let logCol = -1;
+
+  for (let i = 0; i < matrix.length; i++) {
+    const row = matrix[i];
+    for (let c = 0; c < row.length; c++) {
+      const v = normalizeHeaderKey(row[c]);
+      if (v === "attendancedatenepali") {
+        headerRowIndex = i;
+      }
+    }
+    if (headerRowIndex !== -1) break;
+  }
+
+  if (headerRowIndex === -1) {
+    return map;
+  }
+
+  const headerRow = matrix[headerRowIndex];
+  for (let c = 0; c < headerRow.length; c++) {
+    const v = normalizeHeaderKey(headerRow[c]);
+    if (v === "attendancedatenepali") dateCol = c;
+    else if (v === "emppersonalcode") empCol = c;
+    else if (v === "logs") logCol = c;
+  }
+
+  if (dateCol === -1 || empCol === -1 || logCol === -1) {
+    return map;
+  }
+
+  for (let i = headerRowIndex + 1; i < matrix.length; i++) {
+    const row = matrix[i] ?? [];
+    const dateValue = String(row[dateCol] ?? "").trim();
+    const empRaw = row[empCol];
+    const logValue = String(row[logCol] ?? "").trim();
+    const empNorm = normalizeStaffId(empRaw);
+    if (!dateValue || !logValue || !empNorm) continue;
+    const match = dateRe.exec(dateValue);
+    if (!match) continue;
+    const day = Number.parseInt(match[3], 10);
+    if (!day) continue;
+    const key = `${empNorm}|${day}`;
+    const prev = map.get(key);
+    map.set(key, prev ? `${prev} | ${logValue}` : logValue);
+  }
+
+  return map;
+}
+
+async function mergeLogsIntoAttendance(rows: AttendanceRow[], inputPath: string) {
+  const logMap = await loadLogsForAttendance(inputPath);
+  if (logMap.size === 0) {
+    return rows;
+  }
+  return rows.map((row) => {
+    const day = deriveDayNumber(String(row.Date ?? ""));
+    const empNorm = normalizeStaffId(row.Employee_ID);
+    if (!day || !empNorm) {
+      return row;
+    }
+    const log = logMap.get(`${empNorm}|${day}`) ?? "";
+    return { ...row, Log: log };
+  });
 }
 
 function calcLeaveTotals(records: AttendanceRow[]) {
@@ -636,7 +783,7 @@ async function hrmsWorkbookBuffer(inputRows: AttendanceRow[]): Promise<Buffer> {
       Designation: "",
     };
     const blockTop = ws.rowCount + 1;
-    const dayMap: Record<number, { InTime: string; OutTime: string; Status: string; WorkedHours: string }> = {};
+    const dayMap: Record<number, { InTime: string; OutTime: string; Status: string; WorkedHours: string; Log: string }> = {};
 
     for (const row of empRows) {
       const day = deriveDayNumber(String(row.Date ?? ""));
@@ -652,15 +799,17 @@ async function hrmsWorkbookBuffer(inputRows: AttendanceRow[]): Promise<Buffer> {
         OutTime: outVal,
         Status: String(row.Status ?? ""),
         WorkedHours: hoursVal,
+        Log: String(row.Log ?? ""),
       };
     }
 
     const totals = calcLeaveTotals(empRows);
-    const rowTypes: Array<{ label: string; key: "InTime" | "OutTime" | "Status" | "WorkedHours" }> = [
+    const rowTypes: Array<{ label: string; key: "InTime" | "OutTime" | "Status" | "WorkedHours" | "Log" }> = [
       { label: "InTime", key: "InTime" },
       { label: "OutTime", key: "OutTime" },
       { label: "Status", key: "Status" },
       { label: "WorkedHour", key: "WorkedHours" },
+      { label: "Log", key: "Log" },
     ];
     for (const [idx, rowType] of rowTypes.entries()) {
       const rowValues: (string | number)[] = [
@@ -693,6 +842,8 @@ async function hrmsWorkbookBuffer(inputRows: AttendanceRow[]): Promise<Buffer> {
     }
 
     const blockBottom = ws.rowCount;
+    const logRowIndex = blockTop + rowTypes.findIndex((t) => t.key === "Log");
+
     for (let r = blockTop; r <= blockBottom; r += 1) {
       for (let c = 1; c <= headers.length; c += 1) {
         const cell = ws.getRow(r).getCell(c);
@@ -702,7 +853,13 @@ async function hrmsWorkbookBuffer(inputRows: AttendanceRow[]): Promise<Buffer> {
           right: { style: "thin" },
           bottom: { style: "thin" },
         };
-        cell.alignment = c === 3 || c === 4 ? { horizontal: "left", vertical: "middle" } : { horizontal: "center", vertical: "middle" };
+        if (r === logRowIndex && c >= 6 && c < 6 + monthEnd) {
+          cell.alignment = { horizontal: "left", vertical: "top", wrapText: true };
+        } else if (c === 3 || c === 4) {
+          cell.alignment = { horizontal: "left", vertical: "middle" };
+        } else {
+          cell.alignment = { horizontal: "center", vertical: "middle" };
+        }
       }
     }
     sn += 1;
@@ -714,7 +871,7 @@ async function hrmsWorkbookBuffer(inputRows: AttendanceRow[]): Promise<Buffer> {
   ws.getColumn(4).width = 22;
   ws.getColumn(5).width = 14;
   for (let i = 6; i < 6 + monthEnd; i += 1) {
-    ws.getColumn(i).width = 8;
+    ws.getColumn(i).width = 10;
   }
   for (let i = 6 + monthEnd; i < headers.length + 1; i += 1) {
     ws.getColumn(i).width = 10;

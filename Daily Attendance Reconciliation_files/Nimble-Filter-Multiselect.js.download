@@ -1,0 +1,54 @@
+﻿var dropDownSelect = function (dropDownId, maxPlaceholderItems) {
+    $(dropDownId).multiselect({
+        columns: 1,
+        placeholder: "Select options",
+        selectAll: true,
+        search: true,
+        maxSelect: 20,
+        minHeight: 100,
+        maxHeight: 200,
+        maxPlaceholderOpts: maxPlaceholderItems,
+        searchOptions: {
+            default: "Search",
+            showOptGroups: false
+        },
+        selectAllCheckbox: true,
+        multiple: true
+    });
+}
+
+var dropDownSelectAutoComplete = function (dropDownId, maxPlaceholderItems) {
+    var url = $(dropDownId).attr("data-url");
+    $(dropDownId).multiselect({
+        columns: 1,
+        placeholder: "Select options",
+        selectAll: true,
+        search: true,
+        maxSelect: 20,
+        maxPlaceholderOpts: maxPlaceholderItems,
+        searchOptions: {
+            default: "Search",
+            showOptGroups: false,
+            autoComplete: true,
+            url: url
+        },
+        selectAllCheckbox: true,
+        multiple: true
+    });
+}
+
+
+$(document).ready(function () {
+    var $select = $("select");
+    $.each($select, function (key, val) {
+        var data = $(val).attr("data-load");
+        var maxPlaceholderItems = $(val).attr("data-pitems");
+        if (!maxPlaceholderItems) maxPlaceholderItems = 10;
+        if (data === "true") {
+            dropDownSelect($(val), maxPlaceholderItems);
+        }
+        if (data === "autocomplete") {
+            dropDownSelectAutoComplete($(val), maxPlaceholderItems);
+        }
+    });
+});

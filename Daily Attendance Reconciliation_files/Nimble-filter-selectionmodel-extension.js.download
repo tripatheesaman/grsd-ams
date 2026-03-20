@@ -1,0 +1,3197 @@
+﻿//Latest Usable: https://github.com/handsontable/handsontable/releases/tag/6.2.2
+//Current: https://github.com/handsontable/handsontable/releases/tag/0.36.0
+
+var hsGridGlobal = {};
+/*start: global variable for custom grid column sum display on cell selection*/
+var gridSumTimeoutId;
+var gridSumAjaxID;
+var enableSelectionSum = false; // false on keydown, true on mouse down
+var firstAjaxTime = 0;
+/*end: global variable for custom grid column sum display on cell selection*/
+
+var setMaximizeGridHeight = function () {
+
+    var divPrint = $("#reload-alls").length;
+    if (divPrint >= 1) {
+        var profile = 0;
+
+        var nav = $(".navbar-default").length;
+        if (nav >= 1) {
+            profile = profile + 52;
+        } else {
+            profile = profile - 0;
+        }
+        var page = $(".box-footer", $("#reload-alls")).length;
+        if (page >= 1) {
+            profile = profile + 50;
+        } else {
+            profile = profile - 10;
+        }
+        //profile = profile + 166 + 24;
+        var heightOfGrid = $(window).height() - profile;
+        if (heightOfGrid <= 100) {
+            heightOfGrid = 150;
+        }
+        $('.hands-on-table').height(heightOfGrid);
+    }
+}
+
+
+    (function (global, undefined) {
+        "use strict";
+
+        if (global.setImmediate) {
+            return;
+        }
+
+        var nextHandle = 1; // Spec says greater than zero
+        var tasksByHandle = {};
+        var currentlyRunningATask = false;
+        var doc = global.document;
+        var registerImmediate;
+
+        function setImmediate(callback) {
+            // Callback can either be a function or a string
+            if (typeof callback !== "function") {
+                callback = new Function("" + callback);
+            }
+            // Copy function arguments
+            var args = new Array(arguments.length - 1);
+            for (var i = 0; i < args.length; i++) {
+                args[i] = arguments[i + 1];
+            }
+            // Store and register the task
+            var task = { callback: callback, args: args };
+            tasksByHandle[nextHandle] = task;
+            registerImmediate(nextHandle);
+            return nextHandle++;
+        }
+
+        function clearImmediate(handle) {
+            delete tasksByHandle[handle];
+        }
+
+        function run(task) {
+            var callback = task.callback;
+            var args = task.args;
+            switch (args.length) {
+                case 0:
+                    callback();
+                    break;
+                case 1:
+                    callback(args[0]);
+                    break;
+                case 2:
+                    callback(args[0], args[1]);
+                    break;
+                case 3:
+                    callback(args[0], args[1], args[2]);
+                    break;
+                default:
+                    callback.apply(undefined, args);
+                    break;
+            }
+        }
+
+        function runIfPresent(handle) {
+            // From the spec: "Wait until any invocations of this algorithm started before this one have completed."
+            // So if we're currently running a task, we'll need to delay this invocation.
+            if (currentlyRunningATask) {
+                // Delay by doing a setTimeout. setImmediate was tried instead, but in Firefox 7 it generated a
+                // "too much recursion" error.
+                setTimeout(runIfPresent, 0, handle);
+            } else {
+                var task = tasksByHandle[handle];
+                if (task) {
+                    currentlyRunningATask = true;
+                    try {
+                        run(task);
+                    } finally {
+                        clearImmediate(handle);
+                        currentlyRunningATask = false;
+                    }
+                }
+            }
+        }
+
+        function installNextTickImplementation() {
+            registerImmediate = function (handle) {
+                process.nextTick(function () { runIfPresent(handle); });
+            };
+        }
+
+        function canUsePostMessage() {
+            // The test against `importScripts` prevents this implementation from being installed inside a web worker,
+            // where `global.postMessage` means something completely different and can't be used for this purpose.
+            if (global.postMessage && !global.importScripts) {
+                var postMessageIsAsynchronous = true;
+                var oldOnMessage = global.onmessage;
+                global.onmessage = function () {
+                    postMessageIsAsynchronous = false;
+                };
+                global.postMessage("", "*");
+                global.onmessage = oldOnMessage;
+                return postMessageIsAsynchronous;
+            }
+        }
+
+        function installPostMessageImplementation() {
+            // Installs an event handler on `global` for the `message` event: see
+            // * https://developer.mozilla.org/en/DOM/window.postMessage
+            // * http://www.whatwg.org/specs/web-apps/current-work/multipage/comms.html#crossDocumentMessages
+
+            var messagePrefix = "setImmediate$" + Math.random() + "$";
+            var onGlobalMessage = function (event) {
+                if (event.source === global &&
+                    typeof event.data === "string" &&
+                    event.data.indexOf(messagePrefix) === 0) {
+                    runIfPresent(+event.data.slice(messagePrefix.length));
+                }
+            };
+
+            if (global.addEventListener) {
+                global.addEventListener("message", onGlobalMessage, false);
+            } else {
+                global.attachEvent("onmessage", onGlobalMessage);
+            }
+
+            registerImmediate = function (handle) {
+                global.postMessage(messagePrefix + handle, "*");
+            };
+        }
+
+        function installMessageChannelImplementation() {
+            var channel = new MessageChannel();
+            channel.port1.onmessage = function (event) {
+                var handle = event.data;
+                runIfPresent(handle);
+            };
+
+            registerImmediate = function (handle) {
+                channel.port2.postMessage(handle);
+            };
+        }
+
+        function installReadyStateChangeImplementation() {
+            var html = doc.documentElement;
+            registerImmediate = function (handle) {
+                // Create a <script> element; its readystatechange event will be fired asynchronously once it is inserted
+                // into the document. Do so, thus queuing up the task. Remember to clean up once it's been called.
+                var script = doc.createElement("script");
+                script.onreadystatechange = function () {
+                    runIfPresent(handle);
+                    script.onreadystatechange = null;
+                    html.removeChild(script);
+                    script = null;
+                };
+                html.appendChild(script);
+            };
+        }
+
+        function installSetTimeoutImplementation() {
+            registerImmediate = function (handle) {
+                setTimeout(runIfPresent, 0, handle);
+            };
+        }
+
+        // If supported, we should attach to the prototype of global, since that is where setTimeout et al. live.
+        var attachTo = Object.getPrototypeOf && Object.getPrototypeOf(global);
+        attachTo = attachTo && attachTo.setTimeout ? attachTo : global;
+
+        // Don't get fooled by e.g. browserify environments.
+        if ({}.toString.call(global.process) === "[object process]") {
+            // For Node.js before 0.9
+            installNextTickImplementation();
+
+        } else if (canUsePostMessage()) {
+            // For non-IE10 modern browsers
+            installPostMessageImplementation();
+
+        } else if (global.MessageChannel) {
+            // For web workers, where supported
+            installMessageChannelImplementation();
+
+        } else if (doc && "onreadystatechange" in doc.createElement("script")) {
+            // For IE 6–8
+            installReadyStateChangeImplementation();
+
+        } else {
+            // For older browsers
+            installSetTimeoutImplementation();
+        }
+
+        attachTo.setImmediate = setImmediate;
+        attachTo.clearImmediate = clearImmediate;
+    }(typeof self === "undefined" ? typeof global === "undefined" ? this : global : self));
+
+(function ($) {
+    "use strict";
+    var postData = {};
+    var $rootUrl = "";
+    var $mainContainer;
+    var $handsonTable;
+    var $pageWraper;
+    var useCheckBoxs = false;
+    var selectedEmpCode = [];
+    var mappedItems = [];
+    var hot;
+    var filterExpression = [];
+    var global = {
+        FormData: [],
+        //KRG: Unused variables for Global
+        //Compartment: [],
+        //CompartmentList: [],
+        //RackList: [],
+        //CategoryList: [],
+        //Rack: [],
+        //Category: [],
+        //OldData: [],
+        ColumnName: "",
+        SortOrder: "",
+        SortIcon: "",
+        DataTypes: [],
+        header: [],
+        lastChange: [],
+        orderByCol: ""
+    };
+
+    var initGlobalObjectSender = function (element) {
+        return {
+            Filters: $(element).data("filterArray")
+        };
+    };
+
+    var filterTemplate = function () {
+        var handleSelectOnLoad = function ($select) {
+            const $that = $($select);
+            var type = $('option:selected', $that).data("type");
+            const $thatSelectedVal = $that.val();
+            const firstInput = $that.parents("div.popover-content").find("input#first-value");
+            const secondInput = $that.parents("div.popover-content").find("input#second-value");
+            var btnApply = $that.parents("div.popover-content").find("button.btn-data-apply");
+
+            //show hide input based on data type
+            if (type === "bool") {
+                $(firstInput).val($thatSelectedVal).hide();
+            } else if (type === "date" && $thatSelectedVal === "IsBetween") {
+                $(secondInput).removeClass("hidden");
+                $(secondInput).on("keyup", handleInputs);
+            } else {
+                $(secondInput).addClass("hidden");
+            }
+
+            //for select change event
+            setTimeout(function () {
+                $(firstInput).on("keyup", handleInputs);
+                if ($thatSelectedVal !== "" && firstInput.val() !== "") {
+                    btnApply.prop("disabled", false);
+                } else {
+                    btnApply.prop("disabled", true);
+                }
+
+                //handle inputs when select index change
+                if (secondInput.is(":visible") && secondInput.val() === "" && secondInput.val().trim().length <= 0) {
+                    btnApply.prop("disabled", true);
+                } else {
+                    //secondInput.val("");
+                }
+            }, 200);
+
+
+            if ($thatSelectedVal === "Empty") {
+                $(firstInput).addClass("hidden");
+                $(secondInput).addClass("hidden");
+                btnApply.prop("disabled", false);
+            } else {
+                $(firstInput).removeClass("hidden");
+            }
+
+            //handle when input keyup
+            function handleInputs() {
+                if (this.value === "" || this.value.trim().length <= 0 || $thatSelectedVal === "") {
+                    btnApply.prop("disabled", true);
+
+                } else if (type === "date" && secondInput.val() === "" || firstInput.val() === "") {
+                    //check if the second input is visible
+                    if (secondInput.is(":visible")) {
+                        btnApply.prop("disabled", true);
+                    } else {
+                        btnApply.prop("disabled", false);
+                    }
+
+                } else {
+                    btnApply.prop("disabled", false);
+                }
+            }
+        };
+
+        var handlePrepareArrayInSelect = function (dataType, filter) {
+            var optionsArray = [];
+            var $select = $("#condition-selector");
+            if (dataType === "string") {
+                $select.append(`<option data-type="string" value="StartWith" class="hidden">Start With</option>`);
+                $select.append(`<option data-type="string" value="EndWith">End With</option>`);
+                $select.append(`<option data-type="string" value="Equals">Equals</option>`);
+                $select.append(`<option data-type="string" value="Contains" ${dataType === "string" ? "selected='Selected'" : ""}>Contains</option>`);
+            }
+            if (dataType === "int" || dataType === "float" || dataType === "double" || dataType === "decimal") {
+                $select.append(`<option data-type="${dataType}" value="GreaterThan">Greater Then</option>`);
+                $select.append(`<option data-type="${dataType}" value="LessThan">Less Then</option>`);
+                $select.append(`<option data-type="${dataType}" value="Equals" selected='Selected'>Equals</option>`);
+            }
+            if (dataType === "bool") {
+                $select.append(`<option data-type="bool" value="True" ${dataType === "bool" ? "selected='Selected'" : ""
+                    }>Yes</option>`);
+                $select.append(`<option data-type="bool" value="False">No</option>`);
+            }
+            if (dataType === "date") {
+                $select.append(` <option data-type="date" value="Before" ${dataType === "date" ? "selected='Selected'" : ""
+                    }>Before</option>`);
+                $select.append(`<option data-type="date" value="After">After</option>`);
+                $select.append(`<option data-type="date" value="IsBetween">Is Between</option>`);
+            }
+        };
+        var handleEnterKeyHit = function (id) {
+            $(id).keyup(function (event) {
+                if (event.keyCode === 13) {
+                    $(".btn-data-apply").click();
+                    return false;
+                }
+                return true;
+            });
+        };
+        var handleToggleConditionValue = function (objId) {
+            $(objId).on("change", function (e) {
+                e.preventDefault();
+                const $that = $(this);
+                var type = $('option:selected', $that).data("type");
+                const $thatSelectedVal = $that.val();
+                $that.attr("data-prev", $thatSelectedVal);
+                const firstInput = $that.parents("div.popover-content").find("input#first-value");
+                const secondInput = $that.parents("div.popover-content").find("input#second-value");
+                var btnApply = $that.parents("div.popover-content").find("button.btn-data-apply");
+                var valueFirst = $(firstInput).val();
+                $(firstInput).attr("data-prev", valueFirst);
+                if (type === "bool") {
+                    $(firstInput).val($thatSelectedVal).hide();
+                } else if (type === "date" && $thatSelectedVal === "IsBetween") {
+                    $(secondInput).removeClass("hidden");
+                    $(secondInput).on("keyup", handleInputs);
+                } else {
+                    $(secondInput).addClass("hidden");
+                }
+                $(firstInput).on("keyup", handleInputs);
+                if ($thatSelectedVal !== "" && firstInput.val() !== "") {
+                    btnApply.prop("disabled", false);
+                } else {
+                    btnApply.prop("disabled", true);
+                }
+                if (secondInput.is(":visible") && secondInput.val() === "" && secondInput.val().trim().length <= 0) {
+                    btnApply.prop("disabled", true);
+                } else {
+                    //secondInput.val("");
+                }
+                if ($thatSelectedVal === "Empty") {
+                    $(firstInput).addClass("hidden");
+                    $(secondInput).addClass("hidden");
+                    btnApply.prop("disabled", false);
+                } else {
+                    $(firstInput).removeClass("hidden");
+                }
+                function handleInputs() {
+                    if (this.value === "" || this.value.trim().length <= 0 || $thatSelectedVal === "") {
+                        btnApply.prop("disabled", true);
+                    } else if (type === "date" && secondInput.val() === "" || firstInput.val() === "") {
+                        if (secondInput.is(":visible")) {
+                            btnApply.prop("disabled", true);
+                        } else {
+                            btnApply.prop("disabled", false);
+                        }
+                    } else {
+                        btnApply.prop("disabled", false);
+                    }
+                }
+            });
+        };
+        var handleFilterTemplate = function (selector, element) {
+            var tableId;
+            //create a global tpl for filter
+            var template = `
+<form action="javascript:;" id="filter-template-form">
+    <div id="condition-wrap">
+        <div class="form-group" style="margin-bottom:10px !important; ">
+            <div>By Condition: </div>
+            <select class="form-control select3 input-sm" id="condition-selector" data-placeholder="Conditions..">
+
+            </select>
+        </div>
+
+        <div class="form-group " style="margin-bottom:10px !important; ">
+            <input id="first-value" type="text" placeholder="value" class ="form-control input-sm" />
+        </div>
+        <div class="form-group " style="margin-bottom:10px !important; ">
+            <input id="second-value" type="text" placeholder="second value" class ="form-control input-sm hidden" />
+        </div>
+    </div>
+
+    <div class="form-group">
+        <button type="button"   class ="btn btn-success btn-xs col-md-5 col-sm-6 btn-data-apply">
+            <i class="fa fa-check"></i>
+        </button>
+        <button type="button" class="btn btn-default btn-xs col-md-5 col-md-offset-2 data-cancel">
+            <i class="fa fa-close"></i>
+        </button>
+        <div class="clearfix"></div>
+    </div>
+    <div class="form-group no-margin">
+        <button type="button" class="btn btn-default btn-xs col-md-6 data-clear-filters" data-filter="clear">
+            <i class="fa fa-close"></i> Clear Filters
+        </button>
+        <button type="button" class="btn btn-default btn-xs col-md-5 data-clear-filters" style="margin-left:12px;" data-filter="clearAll">
+            <i class="fa fa-close"></i> Clear All
+        </button>
+        <div class="clearfix"></div>
+    </div>
+</form>`;
+
+            function filterClick(selector) {
+                $(selector).popover('hide');
+
+                $(selector).on("click", function (e) {
+                    e.preventDefault();
+                    self = this;
+
+                    $(selector).unbind().bind("click", filterClick($(selector)));
+                    return false;
+                });
+            }
+
+
+            //init popover for the  selector
+            $(selector).popover({
+                html: true,
+                sanitize: false,
+                title: "Filter Options",
+                trigger: "click",
+                placement: "bottom",
+                container: "body",
+                template: '<div class="popover" style="margin-left:-70px;"><div class="arrow" style="left:80%"></div><div class="popover-inner"><h3 class="popover-title"></h3><div class="popover-content"><p></p></div></div></div>',
+                content: function () {
+
+                    const $this = $(this);
+
+                    const getDataType = $this.offsetParent().offsetParent().find("a").data('type');
+
+                    $(".data-filter").not(this).popover("hide");
+                    var filter = $(element).data("filterArray")
+                    setTimeout(function () {
+                        handlePrepareArrayInSelect(getDataType, filter);
+                    }, 200);
+                    setTimeout(function () {
+                        handleSelectOnLoad($("#condition-selector"));
+                        handleEnterKeyHit($("#first-value"));
+                        handleEnterKeyHit($("#second-value"));
+                    }, 100);
+                    return $(template).html();
+                }
+            });
+
+            //KRG: To check performance
+            //$(document).bind("click", function (e) {
+            //    if (!$(selector).is(e.target) && $(selector).has(e.target).length === 0 && $(".popover").has(e.target).length === 0) {
+            //        $(selector).popover("hide");
+            //    }
+            //});
+
+            //TODO: Display filter template with events.
+            $(selector).bind("click", function (e) {
+                e.preventDefault();
+                tableId = $(element)
+                return false;
+            }).on("shown.bs.popover", function (evt) {
+                const $this = $(evt.target);
+                var filter = $(element).data("filterArray")
+                //KRG: unused variable
+                //var off = $(this).offset();
+                $this.data('bs.popover').$arrow.css({ left: "80%" });
+
+                //KRG: unused variable
+                //var left = $this.data('bs.popover').$tip.offset();
+                //var leftDec = left.left - 100;
+
+                const getDataType = $this.parents("div.column-filter").find("a").data('type');
+                var getDataSort = $this.parents("div.column-filter").find("a").data('sort');
+                var getDataSortList = getDataSort.split(':');
+                var colName = getDataSortList[0];
+                setTimeout(function () {
+                    if (filter.length > 0) {
+                        for (let j = 0; j < filter.length; j++) {
+                            if (colName === filter[j][0]) {
+                                $("#condition-selector").val(filter[j][1]);
+                                $("#first-value").val(filter[j][2]);
+                                $("#second-value").val(filter[j][3]);
+                            }
+                        }
+                    }
+                }, 100);
+
+                const options = $this.data('bs.popover').$tip.find('select.select3 option');
+                for (let i = 0, iLen = options.length; i < iLen; i++) {
+                    const typeValue = options[i].getAttribute('data-type');
+                    if (typeValue !== undefined && typeValue !== "default") {
+                        if (typeValue !== getDataType) {
+                            if ((options[i].value === "Equals" || options[i].value === "Contains" && getDataType === "int") || (options[i].value === "Equals" && getDataType === "date")) { continue; }
+                            $(options[i]).remove();
+                        }
+                    }
+                }
+                const iconElem = $this.offsetParent().offsetParent().find("a i.fa");
+                const columnOptionsValue = $this.parents("div.column-filter").find("a").data("sort").split(":");
+                columnOptionsValue.push(iconElem);
+
+                $this.data("bs.popover").$tip.find('input').attr('data-column', columnOptionsValue[0]);
+                $(".data-cancel").on("click", function (e) {
+                    e.preventDefault();
+                    $(evt.currentTarget).popover("hide");
+                });
+
+                $(".btn-data-apply")
+                    .unbind('click')
+                    .bind('click', handleFilterApplyClick($(".btn-data-apply"), columnOptionsValue, tableId));
+                $(".data-clear-filters")
+                    .unbind('click')
+                    .bind('click', filterTemplate.initFiltersClearbutton($(".data-clear-filters"), tableId, getDataSortList));
+                handleToggleConditionValue($("#condition-selector"));
+                //SetFocus('#first-value');
+
+            }).on("hidden.bs.popover", function () {
+                //TODO: after hidden tip
+                $('#first-value').unbind("keypress.key13");
+                $('#second-value').unbind("keypress.key13");
+            });
+        };
+        var handleFiltersClearButton = function ($selector, element, sortElem) {
+            const sender = initGlobalObjectSender(element);
+            const divContainer = $selector.parents("div.form-group");
+            const prevDivMargin = $(divContainer.parents().children()[1]);
+            sender.Filters.length > 0
+                ? divContainer.show() && prevDivMargin.removeClass("no-margin")
+                : divContainer.hide("fast") && prevDivMargin.addClass("no-margin");
+
+            $selector.on("click", function (e) {
+                e.preventDefault();
+                const filterArray = [];
+                var filter = $(element).data("filterArray");
+
+                var btnIdentifier = $(e.currentTarget).data("filter");
+                var type = "ClearAll";
+                if (btnIdentifier === "clear") {
+                    type = "btnClear";
+                } else {
+                    filter = filterArray;
+                    $(element).data("sort", "");
+                }
+                for (let i = 0; i < filter.length; i++) {
+                    if (filter[i][0] === sortElem[0]) {
+                        filter.splice(i, 1);
+                    }
+                }
+                $(element).data("filterArray", filter);
+
+                setImmediate(
+                    handleSubAjaxRequestFormMethod(element, type));
+                $(e.currentTarget.offsetParent).popover("hide");
+            });
+        };
+        return {
+            initFilterTemplate: function (selector, element) {
+                //$("body").on("click", function (e) {
+                //$("[data-toggle=popover]").each(function () {
+                //    if (!$(this).is(e.target) && $(this).has(e.target).length === 0 && $(".popover").has(e.target).length === 0) {
+                //        $(this).popover("hide");
+                //    }
+                //});
+                //});
+                handleFilterTemplate(selector, element);
+            },
+            initFiltersClearbutton: function ($selector, element, sortElem) {
+                handleFiltersClearButton($selector, element, sortElem);
+            }
+        };
+    }();
+
+    var pagingTemplate = function () {
+
+        var template = `<div id="paging-container">
+                    <div class="col-md-2 col-sm-3 col-xs-12">
+                        <div class="form-group no-margin">
+                            <span class="col-sm-3 no-padding" style="margin-top:5px;">show:</span>
+
+                            <div class ="col-sm-9 no-padding">
+                                <select class="form-control input-sm select3 items-per-page" data-placeholder="Item Per page">
+                                    <option value="35" selected="selected">Default</option>
+                                    <option value="20">20</option>
+                                    <option value="40">40</option>
+                                    <option value="100">100</option>
+                                    <option value="200">200</option>
+                                    <option value="500">500</option>
+                                    <option value="1000">1000</option>
+									<option value="1500">1500</option>
+                                    <option value="2000">2000</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class ="col-md-3 col-sm-3 col-xs-12">
+                        <div class="form-group no-margin">
+                            <ul class="pagination pagination-sm">
+                                <li>
+                                    <a href="javascript:;" class="btn btn-default btn-sm btn-prev-page" data-page="1">
+                                        <i class="fa fa-angle-double-left"></i>
+                                    </a>
+                                </li>
+                                <li><a class ="no-padding no-margin no-border" ><input type="text" class ="form-control input-sm currentPageInput" placeholder="Page No:" value="1" style="max-width: 65px;" /></a></li>
+                                <li>
+                                    <a href="javascript:;" class="btn btn-default btn-sm btn-next-page" data-page="2">
+                                        <i class="fa fa-angle-double-right"></i>
+                                    </a>
+                                </li>
+                                <li>
+                                    <a style="margin-left: 10px !important" href="javascript:;" class="btn btn-sm btn-info btn-page-to-go">
+                                        <i class="fa fa-search"></i> Go
+                                    </a>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class ="col-md-3 col-sm-3 col-xs-12">
+                        <div class ="form-group" style="margin-top:5px;">
+                            <div class ="col-sm-3 no-padding">Showing </div>
+                               <span id="record-info-text" class ="no-padding pull-left"></span>
+                                <div class ="col-sm-9 no-padding"></div>
+                        </div>
+                    </div>
+                    <div class ="col-md-4 col-sm-3 col-xs-12">
+                       <div class ="form-group" style="margin-top:5px;">
+                         <a href="" class="text-muted pull-right" id="gridManager" data-url='/CoreExtension/GridManager/Edit' data-action="configGrid" data-width="75%" style="display:none;"><i class="fa fa-gear"></i></a>
+                       <div class ="col-sm-9 no-padding"></div>
+                    </div>
+
+                  </div>
+                </div>`;
+
+        var handleRenderTemplate = function (selector) {
+            $(selector).html(template);
+        };
+        return {
+            initTemplate: function (selector) {
+                handleRenderTemplate(selector);
+            }
+        };
+    }();
+
+    var handleAjaxRequest = function (config, successCallback, errorCallback, completeCallback) {
+        const defaults = {
+            cache: false,
+            async: false,
+            beforesend: function (xhr) { },
+            method: 'POST',
+            dataType: "json",
+            contentType: 'application/json; charset=utf-8',
+            success: successCallback,
+            error: errorCallback,
+            complete: completeCallback
+        };
+
+        $.extend(defaults, config);
+
+        return $.ajax(defaults);
+    };
+
+    var handlePopOverMove = function () {
+        $('[data-toggle="popover"]').popover({
+            sanitize: false,
+        });
+        //Commented: 2018.04.19 by krg: to test performance.
+        //$('div').on('scroll', function (e) {
+        //    $('.popover').each(function () {
+        //        $(this).css('display', 'none');
+        //    });
+        //});
+    };
+
+    var handlePopoversToggleOnBodyClick = function () {
+        //$("body").on("click", function (e) {
+
+        //$("[data-toggle=popover]").each(function () {
+        //    // hide any open popovers when the anywhere else in the body is clicked
+        //    if (!$(this).is(e.target) &&
+        //        $(this).has(e.target).length === 0 &&
+        //        $(".popover").has(e.target).length === 0) {
+        //        $(this).popover("hide");
+        //    }
+        //});
+        //});
+    };
+
+    var itemsPerPage = function (settings) {
+        return $("select.items-per-page.select3 :selected", settings.mainContainer).val();
+    };
+
+    var configGetData;
+    var getValueFromArayOfObject = function (width, header, col, settings) {
+        var headerCols = [];
+        if (settings.widthOfColumn !== undefined) {
+            $.each(settings.widthOfColumn, function (index, value) {
+                $.each(value, function (i, val) {
+                    if (header[col] === i) {
+                        width = parseInt(val, 10);
+                        headerCols.push(i);
+                    }
+                });
+            });
+        }
+
+        if (headerCols.indexOf(header[col] > -1)) {
+
+        } else {
+            width = 80;
+        }
+        if (header[col] === "SN") {
+            width = 50;
+        }
+        return width;
+    }
+
+    var getCustomHeaderName = function (col, header, original, settings) {
+        var colText = void 0;
+        if (settings.headerText !== undefined) {
+            for (var j = 0; j < settings.headerText.length; j++) {
+                var obj = settings.headerText[j];
+                $.each(obj, function (ab, cd) {
+                    if (header[col] === ab) {
+                        colText = cd;
+                    }
+                });
+            }
+        }
+        if (colText === void 0) {
+            colText = header[col];
+        }
+        return colText;
+    }
+
+    var getParameterForAjax = function (currentPage, sortOrder, orderColumn, element) {
+        const currPage = currentPage == null ? $(".currentPageInput", $mainContainer).val() : currentPage;
+        const sort = sortOrder == null ? "" : sortOrder;
+        const order = orderColumn == null ? "" : orderColumn;
+        var options = $(element).data("options");
+        var objParam = {
+            currentPage: currPage,
+            sortOrder: sort,
+            orderColumn: order,
+            itemsPerPage: $("select.items-per-page.select3 :selected", $mainContainer).val(),
+            filterExpression: $(element).data("filterArray"),//filterExpression,
+            postData: postData,
+            hrmPostData: postData
+        };
+        if (options.paramsData !== undefined) {
+            $.extend(objParam, options.paramsData);
+        }
+        return objParam;
+    }
+
+    var handleDataSortingCol = function (selector, element) {
+        $(selector).on("click", function (e) {
+            e.preventDefault();
+            const $this = $(this);
+            var tableId = $(element);//$this.offsetParent("div.column-filter").parents("div.handsontable").find("div.ht_clone_top").parents("div.handsontable");           
+            var options = $(tableId).data("options");
+            $(tableId).data("sort", $this.data("sort").split(":"));
+            $rootUrl = options.url;
+            $mainContainer = options.mainContainer;
+            if (options.paramsData !== undefined) {
+                $.extend($.fn.selectionAppModel.configGetData.paramsData, options.paramsData);
+            }
+            $("button.data-filter").each(function () { $(this).popover("hide"); });
+            const iconElem = this.children[0];
+            const orderCol = $this.data("sort").split(":");
+            var column = orderCol[0];
+            var sortOrder = orderCol[1] === "undefined" ? "ASC" : orderCol[1];
+            setTimeout(function () {
+                return handleHotJsonDataRequests($rootUrl, getParameterForAjax(null, sortOrder, column, tableId), tableId, "btnSort");
+            }, 300);
+
+            return false;
+        });
+    }
+
+    var handleBlockUiForTable = function (selector) {
+        $.blockUI.defaults.css = {};
+        return $(selector).block({
+            message:
+                '<div class="loading-spinner" style="width: 200px; margin-left: -100px;"><div class="progress progress-striped active" style="height:15px;"><div class="progress-bar" style="width: 100%;"></div></div></div>',
+            backgroundColor: "#000000",
+            opacity: .4,
+            theme: false,
+            showOverlay: true,
+            blockMsgClass: "blockMsg",
+            css: {
+                padding: 0,
+                margin: 0,
+                width: '30%',
+                top: '40%',
+                left: '35%',
+                textAlign: 'center',
+                color: '#000',
+                backgroundColor: '#000000',
+                cursor: 'wait'
+            }
+        });
+    };
+
+    var handleHotUpdateSettings = function (instance, config) {
+        return instance.updateSettings(config);
+    };
+
+    //KRG: Function seems not usable
+    //function uniqBy(a, key) {
+    //    var index = [];
+    //    return a.filter(function (item) {
+    //        var k = key(item);
+    //        return index.indexOf(k) >= 0 ? false : index.push(k);
+    //    });
+    //}
+
+    /**
+     * @param {any} event
+     * @param {any} instance
+     */
+    var handleCheckedObjectSingle = function (event, instance, coords) {
+
+        //KRG: code seems not usable.
+        //var dataAferOnCellMouseDown = instance.getData();
+        var r = coords.row, c = coords.col, checkedValue = false;
+
+        if (event.target.checked) {
+            //dataAferOnCellMouseDown[r][c] = true;
+            checkedValue = true;
+        } else {
+            //dataAferOnCellMouseDown[r][c] = false;
+            checkedValue = false;
+        }
+        instance.setDataAtCell(r, c, checkedValue, "edit");
+    };
+
+    /**
+     * 
+     * @param {any} event event from change of javascript
+     * @param {any} instances instance of handsontable
+     * @param {any} settings instance of nimbleframework
+     */
+    var onChange = function (event, instances, options, coords) {
+        const $that = $(event.target);
+        setImmediate(function () {
+            var val;
+            const freezeColumnLeft = instances.view.settings.fixedColumnsLeft;
+            if (freezeColumnLeft !== 0) {
+                //handleCheckedObjectSingle(event, instances);
+            }
+            const values = $that.val();
+            var rowIndex = coords.row;//$that.data("row");
+            var colIndex = coords.col;//$that.data("col");
+            var checkBox;//= $($(".htCheckboxRendererInput", $(".ht_clone_top"))[rowIndex])
+            var hello = instances.getCell(rowIndex, colIndex);
+            checkBox = hello.querySelectorAll('input[type=checkbox]');
+            if ($that.is(":checked")) {
+                $that.prop("checked", "checked")
+                $($(".htCheckboxRendererInput", $(".ht_clone_top", $(instances.rootElement)))[rowIndex]).prop("checked", "checked");
+                $($(".htCheckboxRendererInput", $(".ht_clone_corner", $(instances.rootElement)))[rowIndex]).prop("checked", "checked");
+                $($(".htCheckboxRendererInput", $(".ht_clone_left", $(instances.rootElement)))[rowIndex]).prop("checked", "checked");
+                $($(".htCheckboxRendererInput", $(".ht_master", $(instances.rootElement)))[rowIndex]).prop("checked", "checked");
+                val = values; //currenetrow[1];
+                $(this).parents("td").addClass("checked");
+                if (selectedEmpCode.indexOf(val.toString()) === -1) {
+                    selectedEmpCode.push(val.toString());
+                }
+                var mappedcols = options.mappedCol !== void 0 ? $(instances.rootElement).data('nimble').getHeaderArray().indexOf(options.mappedCol) : 1;
+                var mapval = instances.getDataAtCell(rowIndex, mappedcols)
+                if (mapval) {
+                    if (mappedItems.indexOf(mapval.toString()) === -1) {
+                        mappedItems.push(mapval.toString());
+                    }
+                }
+                if ($(instances.rootElement).data("selectedValue").indexOf(val.toString()) === -1) {
+                    $(instances.rootElement).data("selectedValue").push(val.toString());
+                }
+                if (mapval) {
+                    if ($(instances.rootElement).data("mappedValue").indexOf(mapval.toString()) === -1) {
+                        $(instances.rootElement).data("mappedValue").push(mapval.toString());
+                    }
+                }
+            } else {
+                val = values; //currenetrow[1];
+                $that.prop("checked", "checked")
+                $($(".htCheckboxRendererInput", $(".ht_clone_top", $(instances.rootElement)))[rowIndex]).prop("checked", "");
+                $($(".htCheckboxRendererInput", $(".ht_clone_corner", $(instances.rootElement)))[rowIndex]).prop("checked", "");
+                $($(".htCheckboxRendererInput", $(".ht_clone_left", $(instances.rootElement)))[rowIndex]).prop("checked", "");
+                $($(".htCheckboxRendererInput", $(".ht_master", $(instances.rootElement)))[rowIndex]).prop("checked", "");
+                $(this).parents("td").removeClass("checked");
+                const indx = selectedEmpCode.indexOf(val.toString());
+                selectedEmpCode.splice(indx, 1);
+
+                var selIndex = $(instances.rootElement).data("selectedValue").indexOf(val.toString());
+                $(instances.rootElement).data("selectedValue").splice(selIndex, 1);
+
+                var mappedcols = options.mappedCol !== void 0 ? $(instances.rootElement).data('nimble').getHeaderArray().indexOf(options.mappedCol) : 1;
+                var mapval = instances.getDataAtCell(rowIndex, mappedcols)
+
+                if (mapval) {
+                    const mapindx = mappedItems.indexOf(mapval.toString());
+                    mappedItems.splice(mapindx, 1);
+
+
+                    var selmappedIndex = $(instances.rootElement).data("mappedValue").indexOf(mapval.toString());
+                    $(instances.rootElement).data("mappedValue").splice(selmappedIndex, 1);
+                }
+            }
+        });
+        $(event.target).unbind().bind("change", handleCheck($that, instances, options, coords));
+    };
+
+    var handleCheck = function (sender, instance, options, coords) {
+        $(sender).off("change").on("change", function (event) {
+            event.preventDefault();
+            if (options.isEditAble === true) {
+                setImmediate(handleCheckedObjectSingle(event, instance, coords));
+            } else {
+                setImmediate(onChange(event, instance, options, coords));
+            }
+        });
+    };
+
+    var selectAll = function (e, element) {
+
+        var $that = $(e.target);
+        var $element = $(element);
+        var instance = $element.handsontable("getInstance");
+
+        var val = "";
+        var mappedval = "";
+        var arr = [];
+        const length = instance.getRowHeader().length, counts = instance.countCols() - 1;
+        var header = $element.data("header");
+        var settings = $element.data("options");
+        if ($that.is(":checked")) {
+            $($that, $(".ht_clone_top", element)).prop("checked", "checked");
+            $($that, $(".ht_clone_corner", element)).prop("checked", "checked");
+            $($that, $(".ht_clone_left", element)).prop("checked", "checked");
+            $($that, $(".ht_master", element)).prop("checked", "checked");
+
+            $($(".htCheckboxRendererInput", $(".ht_clone_top", element))).prop("checked", "checked");
+            $($(".htCheckboxRendererInput", $(".ht_clone_corner", element))).prop("checked", "checked");
+            $($(".htCheckboxRendererInput", $(".ht_clone_left", element))).prop("checked", "checked");
+            $($(".htCheckboxRendererInput", $(".ht_master", element))).prop("checked", "checked");
+
+
+            for (let j = 0; j < length; j++) {
+                const row = instance.getData(j, 0, j, counts);
+                var cols = settings.onRowClick !== void 0 ? header.indexOf(settings.onRowClick) : 1;
+                val = row[0][cols];
+
+                if (selectedEmpCode.indexOf(val.toString()) === -1) {
+                    selectedEmpCode.push(val.toString());
+                    arr.push(val.toString());
+                }
+                if ($(instance.rootElement).data("selectedValue").indexOf(val.toString()) === -1) {
+                    $(instance.rootElement).data("selectedValue").push(val.toString());
+                }
+                var mappedcols = settings.mappedCol !== void 0 ? header.indexOf(settings.mappedCol) : 1;
+                mappedval = row[0][mappedcols];
+                if (mappedval) {
+                    if (mappedItems.indexOf(mappedval.toString()) === -1) {
+                        mappedItems.push(mappedval.toString());
+                    }
+                    if ($(instance.rootElement).data("mappedValue").indexOf(mappedval.toString()) === -1) {
+                        $(instance.rootElement).data("mappedValue").push(mappedval.toString());
+                    }
+                }
+
+            }
+        } else {
+            $($that, $(".ht_clone_top", element)).prop("checked", "");
+            $($that, $(".ht_clone_corner", element)).prop("checked", "");
+            $($that, $(".ht_clone_left", element)).prop("checked", "");
+            $($that, $(".ht_master", element)).prop("checked", "");
+            $($(".htCheckboxRendererInput", $(".ht_clone_top", element))).prop("checked", "");
+            $($(".htCheckboxRendererInput", $(".ht_clone_corner", element))).prop("checked", "");
+            $($(".htCheckboxRendererInput", $(".ht_clone_left", element))).prop("checked", "");
+            $($(".htCheckboxRendererInput", $(".ht_master", element))).prop("checked", "");
+            for (let j = 0; j < length; j++) {
+                const row = instance.getData(j, 0, j, instance.countCols() - 1);
+
+                var cols = settings.onRowClick !== void 0 ? header.indexOf(settings.onRowClick) : 1;
+                val = row[0][cols];
+                const indx = selectedEmpCode.indexOf(val.toString());
+                if (indx > -1) {
+                    selectedEmpCode.splice(indx, 1);
+                    arr.splice(indx, 1);
+                }
+
+                var selIndex = $(instance.rootElement).data("selectedValue").indexOf(val.toString());
+                if (selIndex > -1) {
+                    $(instance.rootElement).data("selectedValue").splice(selIndex, 1);
+                }
+                var mappedcols = settings.mappedCol !== void 0 ? header.indexOf(settings.mappedCol) : 1;
+                mappedval = row[0][mappedcols];
+
+                if (mappedval) {
+                    const mapindx = mappedItems.indexOf(mappedval.toString());
+                    if (mapindx > -1) {
+                        mappedItems.splice(mapindx, 1);
+                    }
+                    var mapselIndex = $(instance.rootElement).data("mappedValue").indexOf(mappedval.toString());
+                    if (mapselIndex > -1) {
+                        $(instance.rootElement).data("mappedValue").splice(mapselIndex, 1);
+                    }
+                }
+            }
+        }
+    };
+
+    var handleSelectAllOnEditMode = function (e, element, instance) {
+
+        var dataAferOnCellMouseDown = instance.getData();
+        if (e.target.checked) {
+            for (let i = 0; i < dataAferOnCellMouseDown.length; i++) {
+                dataAferOnCellMouseDown[i][0] = true;
+            }
+        } else {
+            for (let j = 0; j < dataAferOnCellMouseDown.length; j++) {
+                dataAferOnCellMouseDown[j][0] = false;
+            }
+        }
+        instance.updateSettings({
+            data: dataAferOnCellMouseDown
+        });
+    };
+
+    var handleCheckAll = function (sender, element, instance) {
+        $(sender).off("change").on("change", function (e) {
+            e.preventDefault();
+            var option = $(element).data("options");
+
+            if (option.isEditAble === true) {
+                setImmediate(handleSelectAllOnEditMode(e, element, instance));
+            } else {
+                setImmediate(selectAll(e, element));
+            }
+            return false;
+        });
+    };
+
+    var isCheckedAll = function (data) {
+        for (var i = 0, ilen = data.length; i < ilen; i++) {
+            if (data[i][0] !== true) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    var selectInEditmode = function (e, element, instance) {
+
+        var $that = $(e.currentTarget);
+        var val = "";
+        var mappedval = "";
+        var arr = [];
+        const length = instance.getRowHeader().length, counts = instance.countCols() - 1;
+        var header = $(element).data("header");
+        var settings = $(element).data("options");
+        if ($that.is(":checked")) {
+            $($that, $(".ht_clone_top", element)).prop("checked", "checked");
+            $($that, $(".ht_clone_corner", element)).prop("checked", "checked");
+            $($that, $(".ht_clone_left", element)).prop("checked", "checked");
+            $($that, $(".ht_master", element)).prop("checked", "checked");
+            $($(".htCheckboxRendererInput", $(".ht_clone_top", element))).prop("checked", "checked");
+            $($(".htCheckboxRendererInput", $(".ht_clone_corner", element))).prop("checked", "checked");
+            $($(".htCheckboxRendererInput", $(".ht_clone_left", element))).prop("checked", "checked");
+            $($(".htCheckboxRendererInput", $(".ht_master", element))).prop("checked", "checked");
+            for (let j = 0; j < length; j++) {
+                const row = instance.getData(j, 0, j, counts - 1);
+                var cols = settings.onRowClick !== void 0 ? header.indexOf(settings.onRowClick) : 1;
+                val = row[0][cols];
+                if (selectedEmpCode.indexOf(val.toString()) === -1) {
+                    selectedEmpCode.push(val.toString());
+                    arr.push(val.toString());
+                }
+                if ($(instance.rootElement).data("selectedValue").indexOf(val.toString()) === -1) {
+                    $(instance.rootElement).data("selectedValue").push(val.toString());
+                }
+                var mappedcols = settings.mappedCol !== void 0 ? header.indexOf(settings.mappedCol) : 1;
+                mappedval = row[0][mappedcols];
+                if (mappedval) {
+                    if (mappedItems.indexOf(mappedval.toString()) === -1) {
+                        mappedItems.push(mappedval.toString());
+                    }
+                    if ($(instance.rootElement).data("mappedValue").indexOf(mappedval.toString()) === -1) {
+                        $(instance.rootElement).data("mappedValue").push(mappedval.toString());
+                    }
+                }
+            }
+        } else {
+            $($that, $(".ht_clone_top", element)).prop("checked", "");
+            $($that, $(".ht_clone_corner", element)).prop("checked", "");
+            $($that, $(".ht_clone_left", element)).prop("checked", "");
+            $($that, $(".ht_master", element)).prop("checked", "");
+            $($(".htCheckboxRendererInput", $(".ht_clone_top", element))).prop("checked", "");
+            $($(".htCheckboxRendererInput", $(".ht_clone_corner", element))).prop("checked", "");
+            $($(".htCheckboxRendererInput", $(".ht_clone_left", element))).prop("checked", "");
+            $($(".htCheckboxRendererInput", $(".ht_master", element))).prop("checked", "");
+            for (let j = 0; j < length; j++) {
+                const row = instance.getData(j, 0, j, instance.countCols() - 1);
+                var cols = settings.onRowClick !== void 0 ? header.indexOf(settings.onRowClick) : 1;
+                val = row[0][cols];
+                const indx = selectedEmpCode.indexOf(val.toString());
+                if (indx > -1) {
+                    selectedEmpCode.splice(indx, 1);
+                    arr.splice(indx, 1);
+                }
+                var selIndex = $(instance.rootElement).data("selectedValue").indexOf(val.toString());
+                if (selIndex > -1) {
+                    $(instance.rootElement).data("selectedValue").splice(selIndex, 1);
+                }
+                var mappedcols = settings.mappedCol !== void 0 ? header.indexOf(settings.mappedCol) : 1;
+                mappedval = row[0][mappedcols];
+
+                if (mappedval) {
+                    const mapindx = mappedItems.indexOf(mappedval.toString());
+                    if (mapindx > -1) {
+                        mappedItems.splice(mapindx, 1);
+                    }
+                    var mapselIndex = $(instance.rootElement).data("mappedValue").indexOf(mappedval.toString());
+                    if (mapselIndex > -1) {
+                        $(instance.rootElement).data("mappedValue").splice(mapselIndex, 1);
+                    }
+                }
+            }
+        }
+
+    };
+
+    var customDropdownRenderer = function (instance, td, row, col, prop, value, cellProperties) {
+        var selectOptions = cellProperties.selectOptions;
+        var selectedId;
+        for (let index = 0; index < selectOptions.length; index++) {
+            if (value === selectOptions[index].id || parseInt(value) === selectOptions[index].id) {
+                selectedId = selectOptions[index].Value;
+                value = selectOptions[index].Value;
+            }
+        }
+        window.Handsontable.renderers.TextRenderer.apply(this, arguments);
+    }
+
+    var getOrderByCol = function ($element) {
+        return $($element).data("orderByCol");
+    };
+
+    var floorFigure = function (figure, decimals) {
+        if (!decimals) decimals = 2;
+        var d = Math.pow(10, decimals);
+        return (parseInt(Math.round(figure * d)) / d).toFixed(decimals);
+    };
+
+    //var customCheckboxRenderer = function (instance, td, row, col, prop, value, cellProperties) {       
+    //    window.Handsontable.renderers.TextRenderer.apply(this, arguments);
+    //        var hello = instance.getCell(rows, cols);
+    //        var checkBox = hello.querySelectorAll('input[type=checkbox]');
+    //        var checked = -1;
+    //        if (tsts !== null && tsts !== undefined) {
+    //            tsts = tsts.toString();
+    //            checked = nimFrame.indexOf(tsts);
+    //            if (checked > -1) {
+    //                $(checkBox).attr("checked", "checked");
+    //            }
+    //        }
+    //        if (settings.isEditAble) {
+    //            checkInput += value === true ? 'checked=checked' : '';
+    //        } else
+    //            checkInput += checked > -1 || value === true ? 'checked=checked' : '';
+    //        checkInput += ' />';
+
+    //        td.innerHTML = checkInput;
+    //        td.style.textAlign = 'center';
+
+    //    readOnly: settings.isEditAble ? false : true,
+    //        type: settings.isEditAble ? 'checkbox' : 'text'
+    //}
+
+    /**
+     * Need To do future development for popover open and close with this framework
+    this will we commented for now.
+     */
+    /*
+    var clickOver = clickOver || {};
+    clickOver.uniqueId = $.now();
+
+    clickOver.ClickOver = function (selector, options) {
+        var self = this;
+
+        //default values
+        var isVisible, clickedAway = false;
+        debugger
+        var callbackMethod = options.content;
+
+        var uniqueDiv = document.createElement("div");
+        var divId = uniqueDiv.id = ++clickOver.uniqueId;
+        uniqueDiv.innerHTML = options.loadingContent();
+
+        options.trigger = 'manual';
+        options.animation = false;
+        options.content = uniqueDiv;
+
+        self.onClose = function () {
+            $("#" + divId).html(options.loadingContent());
+            $(selector).popover('hide')
+            isVisible = clickedAway = false;
+        };
+        self.onCallback = function (result) {
+            $("#" + divId).html(result);
+        };
+
+        $(selector).popover(options);
+
+        //events
+        $(selector).bind("click", function (e) {
+            $(selector).filter(function (f) {
+                return $(selector)[f] != e.target;
+            }).popover('hide');
+
+            $(selector).popover("show");
+            callbackMethod(self.onCallback);
+
+            isVisible = !(clickedAway = false);
+        });
+
+        $(document).bind("click", function (e) {
+            if (isVisible && clickedAway && $(e.target).parents(".popover").length == 0) {
+                self.onClose();
+                isVisible = clickedAway = false;
+            } else clickedAway = true;
+        });
+    }
+    */
+    var handledKeys = ['ArrowLeft', 'ArrowRight', 'Tab'];
+
+    var handleHotJsonDataRequestsPreparation = function (data, header, columnName, sortOrder, sortIcon, dataTypes, icon, isCheckBox, originalHeader, widthOfCol, isFrozen, settings, element, status, nimFrame) {
+        const config = {
+            dataSchema: function () {
+                var schemaObj = {};
+                if (!data.length > 0) {
+                    for (var i = 0, len = header.length; i < len; i++) {
+                        schemaObj[header[i]] = null;
+                    }
+                } else {
+                    schemaObj = [];
+                }
+                return schemaObj;
+            },
+            data: data,
+            fillHandle: false,
+            autoColumnSize: false,
+            rowHeaders: true,
+            manualColumnFreeze: true,
+            fixedColumnsLeft: isFrozen === undefined ? 0 : isFrozen,
+            manualRowResize: false,
+            // currentColClassName: 'currentCol',
+            renderAllRows: true,
+            manualColumnResize: true,
+            disableVisualSelection: true,
+            viewportRowRenderingOffset: 30,
+            stretchH: header.length < 8 && isCheckBox ? "last" : "all",
+            lastClickTime: 0,
+            doubleClickThreshold: 300,
+            lastClickIndex: 0,
+            colWidths: function (cols) {
+                if (cols < 0) return;
+                if (typeof (handleDataSortingCol) !== "undefined") {
+                    const $thatBtnSortingCol = $(".data-sorting-col", $mainContainer);
+                    $thatBtnSortingCol.unbind("click").bind("click", handleDataSortingCol($thatBtnSortingCol, settings.element));
+                }
+                var width = 120;
+                var wid;
+                width = getValueFromArayOfObject(width, originalHeader, cols, settings);
+                if (widthOfCol !== void 0) {
+                    if (originalHeader[cols] === "SN") {
+                        width = 50;
+                    } else {
+                        if (typeof widthOfCol !== "undefined") {
+                            wid = parseInt(widthOfCol[cols], 10);
+                        }
+                    }
+                    if (wid === 1) {
+                        width = 0.1;
+                    } else {
+                        width = wid;
+                    }
+                }
+                if (settings.excludeColumn !== undefined)
+                    if (settings.excludeColumn.indexOf(originalHeader[cols]) > -1) {
+                        width = .1;
+                    }
+                return width;
+            },
+            modifyColWidth: function (width, col) {
+
+            },
+            colHeaders: function (col) {
+                var colTxt;//=header[col];
+                var wid;
+                if (settings.allowFilteringAndPaging === false) {
+                    colTxt = getCustomHeaderName(col, header, originalHeader, settings);
+                    if (isCheckBox) {
+                        if (originalHeader[col] === "SN") {
+                            var txt = "<input type='checkbox' class='htCenter checker no-margin select-all' data-check-for='child' id='select-all-rows' style='margin-left: 14px !important;' ";
+                            if (settings.isEditAble === true)
+                                txt += isCheckedAll(data) ? "checked='checked'" : "";
+
+                            txt += ">";
+                            colTxt = txt;
+                        }
+                    }
+                    return colTxt;
+                }
+                if (settings.excludeColumn === undefined) {
+                    settings.excludeColumn = "";
+                }
+                if (typeof widthOfCol !== "undefined") {
+                    wid = parseInt(widthOfCol[col], 10);
+                }
+
+                if (originalHeader[col] === columnName && header[col] !== "SN" && settings.excludeColumn.indexOf(originalHeader[col]) === -1 && wid === 1) {
+                    colTxt = '<div class="column-filter">';
+                    colTxt += '<div class="grid-filter"><button class="data-filter popovers desc" title="Filter this column" data-toggle="popover" data-container="body"></button></div>';
+                    colTxt += '<div class="grid-header-title">';
+                    colTxt += `<a href='javascript:;'  class='sort-link sort-col data-sorting-col' data-sort='[${originalHeader[col]
+                        }]:${sortOrder}:${sortIcon}' data-type='${dataTypes[col]}'>${getCustomHeaderName(col, header, originalHeader, settings)}<i class ='fa ${icon}'></i>`;
+                    colTxt += '</div>';
+                    colTxt += '</div>';
+                } else {
+                    if (header[col] === "SN" || settings.excludeColumn.indexOf(originalHeader[col]) > -1 || wid === 1) {
+                        colTxt = getCustomHeaderName(col, header, originalHeader, settings);
+                    } else {
+                        colTxt = '<div class="column-filter">';
+                        colTxt += '<div class="grid-filter" ><button class="data-filter popovers desc" title="Filter this column" data-toggle="popover" data-container="body"></button></div>';
+                        //colTxt += '<button class="data-filter popovers" title="Filter this column"></button>';
+                        colTxt += '<div class="grid-header-title">';
+                        colTxt += `<a href='javascript:;'  class='sort-link sort-col data-sorting-col' data-sort='[${originalHeader[col]
+                            }]:${sortOrder}:${sortIcon}' data-type='${dataTypes[col]}'>${getCustomHeaderName(col, header, originalHeader, settings)}`;
+                        colTxt += '</div>';
+                        colTxt += '</div>';
+                    }
+                }
+                if (isCheckBox) {
+                    if (originalHeader[col] === "SN") {
+                        var txt = "<input type='checkbox' class='htCenter checker no-margin select-all' data-check-for='child' id='select-all-rows' style='margin-left: 14px !important;' ";
+
+                        if (settings.isEditAble === true)
+                            txt += isCheckedAll(data) ? "checked='checked'" : "";
+
+                        txt += ">";
+                        colTxt = txt;
+                    }
+                }
+                return colTxt;
+            },
+            cells: function (row, col, prop) {
+                var ele = this;
+                const cellProperties = {};
+                if (header[col] === "SN") {
+                    if (isCheckBox) {
+                        return {
+                            renderer: function (instance, td, rows, cols, props, value, cellProperties) {
+                                Handsontable.renderers.TextRenderer.apply(this, arguments);
+                                //window.Handsontable.renderers.TextRenderer.apply(this, arguments);
+                                //KRG: Avoid reading whole row and took only data of related cell.
+                                var index = settings.onRowClick === undefined ? 1 : originalHeader.indexOf(settings.onRowClick);
+                                var tsts = ele.instance.getDataAtCell(row, index);
+
+                                //var checkData = ele.instance.getDataAtRow(row);
+                                //var index = settings.onRowClick === undefined
+                                //    ? 1
+                                //    : header.indexOf(settings.onRowClick);
+                                //var tsts = checkData[index];
+
+                                var checkInput = '<input type="checkbox" id="selectSingle" class="htCenter htMiddle selectSingle htCheckboxRendererInput"';
+                                checkInput += ` value="${tsts}" data-row="${row}" data-col="${col}" `;
+                                var tst = $(ele.instance.rootElement).data("selectedValue");
+                                if (tst !== void 0 && tst !== null) {
+                                    if (tst.length > 0)
+                                        nimFrame = tst;
+                                }
+
+                                var hello = instance.getCell(rows, cols);
+                                var checkBox = hello.querySelectorAll('input[type=checkbox]');
+                                var checked = -1;
+                                if (tsts !== null && tsts !== undefined) {
+                                    tsts = tsts.toString();
+                                    checked = nimFrame.indexOf(tsts);
+                                    if (checked > -1) {
+                                        $(checkBox).attr("checked", "checked");
+                                    }
+                                }
+                                if (settings.isEditAble) {
+                                    checkInput += value === true ? 'checked=checked' : '';
+                                } else
+                                    checkInput += checked > -1 || value === true ? 'checked=checked' : '';
+                                checkInput += ' />';
+
+                                td.innerHTML = checkInput;
+                                td.style.textAlign = 'center';
+                            },
+                            readOnly: settings.isEditAble ? false : true,
+                            type: settings.isEditAble ? 'checkbox' : 'text'
+                        };
+
+                    } else {
+                        cellProperties.editor = false;
+                        cellProperties.readOnly = true;
+                    }
+                }
+                else {
+                    if (settings.cellsModifyAndRender !== undefined) {
+                        settings.cellsModifyAndRender(row, col, prop, originalHeader, cellProperties, this, columnName);
+                        if (typeof cellProperties.renderers !== "undefined") {
+                            $.extend(cellProperties.renderer, cellProperties.renderers);
+                        }
+                    } else {
+                        cellProperties.editor = false;
+                        cellProperties.readOnly = true;
+                    }
+
+                    if (dataTypes[col] === "date") {
+                        return {
+                            renderer: function (instance, td, rows, cols, props, value, iCellProperties) {
+                                if (cellProperties.readOnly === false) {
+                                    //window.Handsontable.AutocompleteCell.renderer.apply(this, arguments);
+                                    Handsontable.renderers.AutocompleteRenderer.apply(this, arguments);
+                                } else {
+                                    Handsontable.renderers.TextRenderer.apply(this, arguments);
+                                }
+                                var colH = dataTypes[col] === "date";
+                                var dates = value;
+                                if (td.innerText !== "") {
+                                    if (typeof value !== "number")
+                                        if (value !== undefined) {
+                                            if (value !== null) {
+                                                if (value.indexOf("T") > -1)
+                                                    dates = value.split("T")[0];
+                                            }
+                                            td.innerText = dates;
+                                        }
+                                }
+                                if (cellProperties.editor === "date") {
+                                    if (colH) {
+                                        iCellProperties.editor = "date";
+                                        td.className += " datepicker";
+                                    } else {
+                                        iCellProperties.editor = "text";
+                                        td.className += " myNepaliDate";
+                                    }
+                                }
+                                if (cellProperties.readOnly === false) {
+                                    td.style.background = '#c5e0b4';
+                                }
+                                if (typeof settings.dateRenderer !== "undefined")
+                                    settings.dateRenderer(instance, td, rows, cols, props, value, iCellProperties);
+                            },
+                            type: cellProperties.editor === "date" ? "date" : "text",
+                            readOnly: cellProperties.editor === "date" ? false : true,
+                            correctFormat: true,
+                            defaultDate: ''
+                        };
+                    }
+                    else if (dataTypes[col] === "float" || dataTypes[col] === "decimal") {
+                        var dta = ele.instance.getDataAtCell(row, col);
+                        return {
+                            renderer: function (instance, td, rows, cols, props, value, iCellProperties) {
+                                //window.Handsontable.NumericCell.renderer.apply(this, arguments);
+                                Handsontable.renderers.NumericRenderer.apply(this, arguments);
+                                // window.Handsontable.renderers.TextRenderer.apply(this, arguments);
+
+                                if (td.innerHTML !== "") {
+                                    if (value !== null) {
+                                        td.innerHTML = floorFigure(value);
+                                    }
+                                }
+                                if (typeof settings === "undefined") {
+                                    if (typeof settings.floatRenderer === "undefined") {
+                                        settings.floatRenderer(instance, td, rows, cols, props, value, iCellProperties, originalHeader);
+                                    }
+                                }
+                            },
+                            readOnly: cellProperties.readOnly === true ? true : false,
+                            type: "numeric",
+                            allowInvalid: dta === '' ? true : false
+                        };
+                    }
+                }
+
+                if (cellProperties.editor === "select") {
+                    cellProperties.renderer = customDropdownRenderer;
+                }
+                if (cellProperties.editor === "dropdown") {
+                    cellProperties.type = "dropdown";
+
+                }
+                if (cellProperties.editor === "autocomplete") {
+                    cellProperties.type = "autocomplete";
+                }
+
+                return cellProperties;
+
+            },
+            afterRender: function (row, col) {
+                displayColumnSum(0, true);
+                if (typeof (handleDataSortingCol) !== "undefined") {
+                    const $thatBtnSortingCol = $(".data-sorting-col", element);
+                    $thatBtnSortingCol.unbind("click").bind("click", handleDataSortingCol($thatBtnSortingCol, this.rootElement));
+                }
+                $('[data-toggle="popover"]', settings.mainContainer).each(function () { $(this).popover("destroy"); });
+                $('[data-toggle="popover"]', element).each(function () { $(this).popover("destroy"); });
+                var $thatBtnFilter = $("button.data-filter", element);
+
+                filterTemplate.initFilterTemplate($thatBtnFilter, this.rootElement);
+                handleUnbindAndBindPagingButton(this.rootElement);
+                if (settings.afterRenderAll !== null && settings.afterRenderAll !== undefined) {
+                    settings.afterRenderAll(row, col, this);
+                }
+            },
+            afterRenderer: function (TD, row, col, prop, value, cellProperties) {
+                if (header[col] === "SN") {
+                    //var ele = this;
+                    if (isCheckBox) {
+                        //KRG: Avoid reading whole row and took only data of related cell.
+                        var index = settings.onRowClick === undefined ? 1 : header.indexOf(settings.onRowClick);
+                        var tsts = this.getDataAtCell(row, index);
+
+                        //var checkData = ele.getDataAtRow(row);
+                        //var index = settings.onRowClick === undefined
+                        //    ? 1
+                        //    : header.indexOf(settings.onRowClick);
+                        //var tsts = checkData[index];
+
+                        var hello = this.getCell(row, col);
+                        var checkBox = hello.querySelectorAll('input[type=checkbox]');
+                        if (tsts !== null && tsts !== undefined) {
+                            tsts = tsts.toString();
+                            var checked = nimFrame.indexOf(tsts);
+                            if (checked > -1) {
+                                $(checkBox).attr("checked", "checked");
+                            }
+                        }
+                    }
+                }
+                //KRG: try to set background for editable cell
+                if (cellProperties.readOnly === false) {
+                    //debugger;
+                    TD.style.background = '#c5e0b4';
+                }
+
+            },
+            beforeOnCellMouseDown: function (event, coords, element) {
+                event.stopImmediatePropagation();
+            },
+            afterOnCellMouseDown: function (event, coords, TD) {
+                enableSelectionSum = true;
+                if (event.target.type === "checkbox") {
+                    //KRG
+                    // handleCheckAll($(".select-all"), this.rootElement, this);
+                    handleCheck($(".selectSingle"), this, settings, coords);
+                }
+                //KRG
+                else if (event.target.type === 'radio') {
+                    var r = coords.row;
+                    var c = coords.col;
+
+                    var dataAferOnCellMouseDown = this.getData();
+                    for (let j = 0; j < dataAferOnCellMouseDown.length; j++) {
+                        //if (dataAferOnCellMouseDown[j][c] === true && !event.target.checked) {
+                        //this.setDataAtCell(j, c, false, "radio");                             
+                        //}                        
+                        dataAferOnCellMouseDown[j][c] = false;
+                    }
+                    dataAferOnCellMouseDown[r][c] = true;
+                    hot.loadData(dataAferOnCellMouseDown);
+                    //this.setDataAtCell(r, c, true, "radio");                   
+                }
+            },
+            outsideClickDeselects: false,
+            afterSelectionEnd: function (r, c, r2, c2) {
+                if (settings.afterSelectionRow !== undefined) {
+                    settings.afterSelectionRow(r, c, r2, c2, this);
+                }
+                var currentTime = new Date().getTime();
+                if (currentTime - config.lastClickTime < config.doubleClickThreshold && c > 0 && c == config.lastClickIndex) {
+
+                    if (c > 0) {  // exclude first checkbox column
+                        if (firstAjaxTime < 3) {   ///only allow this feature if data fetch time is less than 3 sec.
+                            if (gridSumAjaxID) gridSumAjaxID.abort();
+                            let cellMeta = hot.getCellMeta(r, c);
+                            //sum only when mouse selection event and numeric column
+                            if (enableSelectionSum && (cellMeta.dataType == 'numeric' || cellMeta.type == 'numeric')) {
+                                var sm = 0;
+                                if (cellMeta.readOnly && c == c2 && r == r2) {
+                                    //logic to fetch column sum value from backend and display.
+                                    fetchAndDisplayColumnSum(header[c], hot);
+
+                                }
+                                else {
+                                    // sum from selected cells
+                                    let data = hot.getData(r, c, r2, c2);
+                                    if (data.length > 0) {
+                                        for (let i = 0; i < data[0].length; i++) {
+                                            sm += data.reduce((pv, cv) => {
+                                                return pv + (parseFloat(cv[i]) || 0);
+                                            }, 0);
+                                        }
+                                    }
+                                    displayColumnSum(sm);
+                                }
+                            }
+                            else {
+                                //remove displayed value
+                                displayColumnSum(0, true)
+                            }
+                        }
+                        else {
+                            //remove displayed value
+                            displayColumnSum(0, true)
+                        }
+                    }
+                }
+                config.lastClickTime = currentTime;
+                config.lastClickIndex = c;
+
+            },
+            afterSelectionEndByProp: function (r, p, r2, p2) {
+                if (settings.afterSelectionRowEndByProp !== undefined) {
+                    settings.afterSelectionRowEndByProp(r, p, r2, p2, this, header);
+                }
+            },
+            // preventOverflow: 'horizontal',
+            afterChange: function (changes, source) {
+                if (source !== "loadData") {
+                    if (settings.afterChangeData !== undefined) {
+                        settings.afterChangeData(changes, source, header, this);
+                    }
+                    if (settings.changeDataRow !== undefined) {
+                        settings.changeDataRow(data, header, this, changes, source);
+                    }
+                }
+            },
+            beforeChange: function (datas, source) {
+            },
+            beforeRenderer: function (instance, td, row, col, prop, value, cellProperties) {
+            },
+            afterGetColHeader: function (col, TH) {
+                var $thatBtnFilter = $("button.data-filter", settings.mainContainer);
+                filterTemplate.initFilterTemplate($thatBtnFilter, this.rootElement);
+                var widthCol = this.getColWidth(col);
+                var colHHtmlElem = $(TH).find(".colHeader").find("div.grid-filter");
+                if (widthCol < 28) {
+                    colHHtmlElem.remove();
+                    //KRG
+                    // TH.style.display = 'none';
+                }
+                if (originalHeader[col] === "SN") {
+                    //KRG: Added Check All here, removed from individual check.
+                    if (isCheckBox) {
+                        handleCheckAll($(".select-all"), this.rootElement, this);
+                    }
+
+                    if (settings.isEditAble === true)
+                        if (isCheckedAll(this.getData()) === true) {
+                            $(TH).find("input#select-all-rows").prop("checked", true);
+                        } else
+                            $(TH).find("input#select-all-rows").prop("checked", false);
+                }
+                var filterExp = $(this.rootElement).data("filterArray");
+
+                var sortExp = $(this.rootElement).data("sort");
+                var collss = columnName;
+                var cols = originalHeader.indexOf(columnName);
+                if (status === "btnSort") {
+                    $($("TH", $(".ht_clone_top", $(this.rootElement)))[cols + 1]).find(".data-filter").addClass("fitter").css({ "background": "red" });
+                    $($("TH", $(".ht_clone_corner", $(this.rootElement)))[cols + 1]).find(".data-filter").addClass("fitter").css({ "background": "red" });
+                    $($("TH", $(".ht_clone_left", $(this.rootElement)))[cols + 1]).find(".data-filter").addClass("fitter").css({ "background": "red" });
+                    $($("TH", $(".ht_master", $(this.rootElement)))[cols + 1]).find(".data-filter").addClass("fitter").css({ "background": "red" });
+                }
+                if (filterExp.length > 0) {
+                    for (var i = 0; i < filterExp.length; i++) {
+                        collss = filterExp[i][0];
+                        var colIndex = originalHeader.indexOf(collss);
+                        //if (status === "btnSort" || status === "filter") {
+                        $($("TH", $(".ht_clone_top", $(this.rootElement)))[colIndex + 1]).find(".data-filter").css({ "background": "blue" });
+                        $($("TH", $(".ht_clone_corner", $(this.rootElement)))[colIndex + 1]).find(".data-filter").css({ "background": "blue" });
+                        $($("TH", $(".ht_clone_left", $(this.rootElement)))[colIndex + 1]).find(".data-filter").css({ "background": "blue" });
+                        $($("TH", $(".ht_master", $(this.rootElement)))[colIndex + 1]).find(".data-filter").css({ "background": "blue" });
+
+                        //}
+                    }
+                }
+                if (sortExp !== undefined && sortExp.length > 0) {
+                    var sortCol = sortExp[0];
+                    var sortIndex = originalHeader.indexOf(sortCol);
+                    $($("TH", $(".ht_clone_top", $(this.rootElement)))[sortIndex + 1]).find(".data-filter").addClass("fitter").css({ "background": "red", "content": '&#x25B2;' });
+                    $($("TH", $(".ht_clone_corner", $(this.rootElement)))[sortIndex + 1]).find(".data-filter").addClass("fitter").css({ "background": "red", "content": '&#x25B2;' });
+                    $($("TH", $(".ht_clone_left", $(this.rootElement)))[sortIndex + 1]).find(".data-filter").addClass("fitter").css({ "background": "red", "content": '&#x25B2;' });
+                    $($("TH", $(".ht_master", $(this.rootElement)))[sortIndex + 1]).find(".data-filter").addClass("fitter").css({ "background": "red", "content": '&#x25B2;' });
+                }
+            },
+            afterCreateRow: function (index, amount) {
+                if (settings.afterRowCreate !== void 0) {
+                    settings.afterRowCreate(index, amount, data, originalHeader, this);
+                }
+            },
+
+            //KRG: Try to avoid row enter in hidden cells with left right arrow.
+            //REf:Remove hidden columns: http://jsfiddle.net/LkLkd405/4/
+            //Ref: https://forum.handsontable.com/t/use-keys-to-skip-empty-cells/3544/2
+            beforeKeyDown: function (event) {
+                if ((this.getSelected() && handledKeys.includes(event['key'])) ||
+                    (this.getSelected() && event['ctrlKey'] && event['key'] === "Delete")) {
+                    event.isImmediatePropagationEnabled = false;
+                    event.isImmediatePropagationStopped = function () {
+                        return !this.isImmediatePropagationEnabled;
+                    };
+                    event.stopImmediatePropagation();         // prevent EditorManager from processing this event
+                    event.preventDefault();                   // prevent browser from scrolling the page up
+                }
+            },
+            afterDocumentKeyDown: function (event) {
+                enableSelectionSum = false;
+                if (this.getSelected() && !event['shiftKey'] && handledKeys.includes(event['key'])) { //Handle not selection of hidden columns on arrow and tab
+                    let row = this.getSelected()[0];
+                    let column = this.getSelected()[1];
+                    let curCol = column;
+                    const totalCols = this.countCols();
+                    const right = (event['key'] === 'ArrowRight');
+                    const left = (event['key'] === 'ArrowLeft');
+                    const tab = (event['key'] === 'Tab');
+                    if (right || left || tab) {
+                        const incr = (right || tab) ? 1 : -1;
+                        var i = 0;
+                        do {
+                            if (i > 100) break;
+                            i++;
+                            column = mod(column + incr, totalCols);
+                        } while (emptyOrNoWidth(row, column, this));
+                        /*If cell is next to last selectable column of currnet row increase or decrease row.*/
+                        //if (column < curCol && (right || tab) && row < this.countRows())
+                        //    row++;
+                        //else if (column > curCol && left && row >= 0)
+                        //    row--;
+
+                        /*If cell is next to last selectable column of currnet row stop nevigation.*/
+                        if (column < curCol && (right || tab) && row < this.countRows())
+                            return;
+                        else if (column > curCol && left && row >= 0)
+                            return;
+
+                        this.selectCell(row, column);
+                    }
+                }
+                else if (this.getSelected() && event['ctrlKey'] && event['key'] === "Delete") { //delete row on ctrl + delete
+                    if (this.getSelected()[3] + 1 == this.countCols() && this.getSelected()[1] == 0)  //checks if a complete row is selected while deleting
+                    {
+                        var r = this.getSelected()[0];
+                        var sr = this.isEmptyRow(r);
+                        if (sr == true && r === 0) { }
+                        else {
+                            this.alter('remove_row', r, 1);
+                        }
+                    }
+                }
+
+            },
+            currentRowClassName: 'currentRow'
+            //currentColClassName: 'currentCol'
+        };
+
+
+        if (settings.enableSortingAndFiltering == false)
+            delete config.afterGetColHeader;
+        delete config.afterCreateRow;
+        //console.timeEnd("answer time");
+        return config;
+    };
+
+    function fetchAndDisplayColumnSum(colName, elem) {
+        displayColumnSum(0, false, true);
+        var element = elem.rootElement;
+        var settings = $(element).data("options");
+        $mainContainer = settings.mainContainer;
+        $handsonTable = element;
+        $rootUrl = settings.url;
+        if (settings.paramsData !== undefined) {
+            $.extend($.fn.selectionAppModel.configGetData.paramsData, settings.paramsData);
+        }
+        const objParam = {
+            currentPage: 1,
+            sortOrder: "",
+            orderColumn: "",
+            itemsPerPage: -1, //$("select.items-per-page.select3 :selected", settings.mainContainer).val(),
+            filterExpression: $(element).data("filterArray"),
+            postData: postData,
+            hrmPostData: postData
+        };
+        $.extend(objParam, settings.paramsData);
+
+        const config = {
+            url: $rootUrl,
+            data: JSON.stringify(objParam)
+        };
+        let sm = 0;
+        setTimeout(function () {
+            var timeStarts = new Date().getTime();
+            gridSumAjaxID = handleAjaxRequest(config,
+                function (results) {
+                    const objArr = results;
+                    if (objArr.StatusType === "error") {
+                        // data fetch error.
+                        displayColumnSum(0, true)
+                    } else {
+                        let dataAll = results.Object.shift();
+                        let hdr = dataAll.shift();
+                        let colIDx = hdr.indexOf(colName);
+                        sm = dataAll.reduce((pv, cv) => {
+                            return pv + (parseFloat(cv[colIDx]) || 0);
+                        }, 0);
+                        displayColumnSum(sm);
+                        firstAjaxTime = (new Date().getTime() - timeStarts) / 1000;
+                    }
+                })
+        })
+    }
+
+    function displayColumnSum(value, isRemoveElementOnly, isLoadingOnly) {
+        var ele = $('nav.navbar.navbar-default .container-fluid #l-grid-sum');
+        if (isLoadingOnly) {
+            if (ele.length == 0) {
+                $('nav.navbar.navbar-default .container-fluid').append(`<div class='pull-right' id='l-grid-sum'></div>`);
+                ele = $('nav.navbar.navbar-default .container-fluid #l-grid-sum');
+            }
+            spinnerOn(ele, '1x');
+            return;
+        }
+
+        if (isRemoveElementOnly) {
+            spinnerOff(ele);
+            ele.remove();
+            return;
+        }
+        if (ele.length > 0) {
+            if (gridSumTimeoutId) clearTimeout(gridSumTimeoutId); //clear previous set timeout
+            spinnerOff(ele);
+            ele.text(`Sum:${handleFormatNumber(value)}`);
+        }
+        else {
+            $('nav.navbar.navbar-default .container-fluid').append(`<div class='pull-right' id='l-grid-sum'>Sum:${parseFloat(value).toFixed(2)}</div>`);
+        }
+        gridSumTimeoutId = setTimeout(function () {
+            $('nav.navbar.navbar-default .container-fluid #l-grid-sum').remove();
+        }, 10000);
+    }
+
+    function emptyOrNoWidth(row, col, instance) {
+        return instance.getColWidth(col) < 5; // || !instance.getDataAtCell(row, col);
+    }
+
+    function mod(n, m) {
+        return ((n % m) + m) % m;
+    }
+
+    var control;
+    //Method For Gridmanager
+    var handleGridManagerFromPage = function () {
+        $(document).on('mousedown', ".radio", function (event) {
+            event.stopPropagation(); //otherwise can confuse cell mousedown handler
+        });
+        $(document).on('mouseup', ".radio", function (event) {
+            event.stopPropagation(); //otherwise can confuse cell dblclick handler
+        });
+
+        var handleAddButtonClickOfSelection = function ($sender, config, $elem) {
+            $sender.off("click").on("click", function (e) {
+                //var controlNameSs = $($elem).data("controlName");
+                e.preventDefault();
+                var data = $("#hands-on-table-selection").data("nimble");
+                var hotInst = data.getInstance();
+                var countSourceRows = hotInst.countRows();
+                var options = $("#hands-on-table-selection").data("options");
+                handleBlockUiForTable(options.mainContainer);
+                var colData = hotInst.getData();
+                var allData = data.getDataWithHeader();
+                for (var i = 0; i < countSourceRows; i++) {
+                    var rowData = colData[i][2];
+                    if (rowData === config.orderByCol) {
+                        if (colData[i][0]) {
+                        } else {
+                            var test = [true, config.controlName, config.orderByCol, config.orderByCol, null, 100, false, null];
+                            allData.push(test);
+                        }
+                    }
+                }
+                var $form = $("#common-gridmanager-form");
+
+                setTimeout(function () {
+                    const postData = JSON.stringify({
+                        Filter: allData
+                    });
+
+                    $.post($form.attr("action"), { postData }, function (data, status) {
+                        if (status === "success") {
+                            var clientMessage = { title: data.Title, type: data.StatusType, content: data.Message };
+                            if (clientMessage.type === "success") {
+                                handleSubAjaxRequestFormMethod($($elem));
+                                window.UIExtendedModals.hide();
+                            }
+
+                            window.UIToastr.init(clientMessage);
+                            $('.btnSave').button('reset');
+                            $(options.mainContainer).unblock();
+                        }
+                    });
+                }, 300);
+                $sender.unbind().bind("click", handleAddButtonClickOfSelection($sender, config, $elem));
+                return false;
+            });
+        };
+        var handleGridManagerBsModal = function (selector, formName, config, $elem) {
+            var $form = $("#" + formName);
+            $form.on("submit", function (e) {
+                e.preventDefault();
+                $('body').modalmanager('loading');
+                var dataWidth = $(selector).attr("data-width");
+                const dataUrl = selector.attr("data-url");
+
+                var action = selector.attr("data-action");
+                var width = dataWidth === null && dataWidth === undefined ? '60%' : dataWidth;
+                window.UIExtendedModals.init({
+                    width: width,
+                    content: dataUrl,
+                    contentPlaceHolder: $("#modal-popup"),
+                    modal$elem: $("#modal-popup"),
+                    fillContent: true,
+                    usingAjax: true,
+                    data: $form.serialize(),
+                    afterPopupOpen: function () {
+                        window.handelPickerAfterBsModalPopUpOpen();
+                        setTimeout(function () {
+                            if (action === "configGrid") {
+                                const configs = {
+                                    url: '/CoreExtension/GridManager/LoadSelection',
+                                    paramsData: { "data": config.data, "controlName": config.controlName, "orderByCol": config.orderByCol },
+                                    useCheckBox: true,
+                                    mainContainer: $(".selection"),
+                                    formType: "Index",
+                                    pageWraper: $(".paging-wrappersss"),
+                                    widthOfColumn: [{ IsFrozen: 125 }, { SN: 50 }, { CustomColumnName: 280 }, { ColumnName: 200 }],
+                                    excludeColumn: ["ControlName", "Ordinal", "Sort"],
+                                    cellsModifyAndRender: function (row, col, prop, header, cellProperties, hotInstance, columnName) {
+                                        cellProperties.readOnly = true;
+                                        if (header[col] === "IsFrozen") {
+                                            cellProperties.readOnly = true;
+                                            cellProperties.data = "IsFrozen";
+                                            var checkInput = '<input type="radio" name="IsFrozen" class="htCenter htMiddle radio"';
+                                            checkInput += ` data-rows="${row}" data-cols="${col}"`;
+                                            cellProperties.renderer = function (instance, td, rows, cols, props, values, cellPropertiess) {
+
+                                                window.Handsontable.renderers.CheckboxRenderer.apply(this, arguments);
+                                                checkInput += values === true ? "checked='checked'" : "";
+                                                checkInput += `value="${values}"`;
+                                                checkInput += ' />'
+                                                td.innerHTML = checkInput;
+                                                td.style.textAlign = 'center';
+                                            }
+                                        }
+                                        if (header[col] === "ColumnWidth") {
+                                            cellProperties.readOnly = false;
+                                            cellProperties.editor = "text";
+                                        }
+                                        if (header[col] === "CustomColumnName") {
+                                            cellProperties.readOnly = false;
+                                        }
+                                    },
+                                    afterSelectionEndProp: function (r, p, r2, p2, instance) {
+
+                                        const ele = this;
+                                    },
+                                    changeDataRow: function (data, header, instance, changes, source) {
+                                        const ele = this;
+                                        if (source !== 'loadData') {
+                                        }
+                                    },
+                                    manualRowMove: true,
+                                    isEditAble: true,
+                                    autoColumnSize: false,
+                                    onRowClick: "SN",
+                                    radionButton: false
+                                }
+                                $("#hands-on-table-selection").selectionAppModel(configs);
+                                handleAddButtonClickOfSelection($(".btnAdd-Sellection"), config, $elem);
+                            }
+                        }, 200);
+                    },
+                    afterPopupClose: function () {
+                        width = "";
+
+                    }
+                });
+                $form.unbind().bind("submit");
+            });
+            $form.submit();
+            return true;
+        }
+        var configGrid = {
+            url: void 0,
+            loadParameter: void 0,
+            controlName: control,
+            GridDataSource: void 0,
+            GridParameter: void 0,
+            GridTitle: void 0,
+            data: void 0,
+            orderByCol: void 0
+        }
+        var handleConfigGridClick = function ($sender, controlName, $elem) {
+            $sender.off("click").on("click", function (e) {
+                e.preventDefault();
+                //var controlNameSs = $($elem).data("controlName");
+                var config = {
+                    url: void 0,
+                    loadParameter: void 0,
+                    controlName: control,
+                    GridDataSource: void 0,
+                    GridParameter: void 0,
+                    GridTitle: void 0,
+                    data: void 0,
+                    orderByCol: void 0
+                }
+                $.ajax({
+                    url: '/CoreExtension/GridManager/ManageGrid?controlName=' + control,
+                    success: function (data) {
+                        config.url = data.GridDataSource;
+                        config.loadParameter = data.GridParameters;
+                        var urlWithParam = config.url;
+                        urlWithParam = urlWithParam.split("/");
+                        var parameter;
+                        if (config.loadParameter === undefined || config.loadParameter === null) {
+                            parameter = "";
+                        } else {
+                            parameter = config.loadParameter;
+                        }
+                        var preparedUrl = "/" + urlWithParam[1] + "/" + urlWithParam[2] + "/Load" + parameter;
+                        $.ajax({
+                            url: preparedUrl,
+                            error: function (error) { },
+                            success: function (success) {
+                                var obj = success;
+                                config.data = obj.Object[0];
+                                config.orderByCol = obj.Object[1].ColumnName;
+                            }, complete: function (complete) { }
+                        });
+                        $.extend(configGrid, config);
+
+                        handleGridManagerBsModal($sender, 'submit_udsel', config, $elem);
+                    },
+                    complete: function (complete) { }
+                });
+
+                $sender.unbind().bind("click", handleConfigGridClick($sender, controlName, $elem));
+                return false;
+            });
+        };
+        return {
+            inithandleConfigGridClick: function (sender, controlName, elem) {
+                handleConfigGridClick(sender, controlName, elem);
+            }
+        }
+    }();
+
+    var handleHotJsonDataRequests = function (url, params, tableId, status) {
+        //console.time("handleHotJsonDataRequests");
+
+        var options = $(tableId).data("options");
+        handleBlockUiForTable(options.mainContainer);
+        const config = {
+            url: url,
+            data: JSON.stringify(params)
+        };
+
+        setTimeout(function () {
+            handleAjaxRequest(config,
+                function (results) {
+                    const objArr = results;
+                    if (objArr.StatusType === "error") {
+                        const clientMessage = { title: objArr.Title, type: objArr.StatusType, content: objArr.Message && objArr.Message.length > 0 ? objArr.Message : "Unable To Load Data!!" };
+                        window.UIToastr.init(clientMessage);
+                    } else {
+                        const dt = objArr.Object[0];
+                        const virtualData = objArr.Object[0];
+                        const modifiedDt = dt.slice(1);
+                        var virtualWithOutHeader = virtualData.slice(1);
+                        const header = dt[0];
+                        const columnName = objArr.Object[1].ColumnName;
+                        const sortIcon = objArr.Object[1].SortIcon;
+                        const sortOrder = objArr.Object[1].SortOrder;
+                        const icon = columnName === undefined || columnName === "" ? "fa-sort" : sortIcon;
+                        var dataTypes = [];
+                        if (typeof objArr.Object[1].DataTypes !== "undefined") {
+                            dataTypes = objArr.Object[1].DataTypes.split(",");
+                        }
+                        var columnsName;
+                        global.header = header;
+                        var $tbl = $(tableId);
+                        var scsrollLeftPosition = $($tbl).scrollLeft();
+                        var test = $($tbl).data("selectedValue");
+                        var test1 = $($tbl).data("mappedValue");
+                        $tbl = $(tableId).data("nimble").reInitAllData();
+                        $handsonTable = $($tbl);
+                        global.orderByCol = columnName;
+                        $handsonTable.data("orderByCol", columnName);
+                        $handsonTable.data("dataTypes", dataTypes);
+                        var controlName;
+                        if (objArr.Object[1].ColumnsName !== undefined) {
+                            columnsName = objArr.Object[1].ColumnsName.split(',');
+                            $($tbl).data("controlName", objArr.Object[1].ControlName);
+                            controlName = objArr.Object[1].ControlName;
+                            control = objArr.Object[1].ControlName;
+
+                            var userType = parseInt(objArr.Object[1].type, 10);
+
+                            if (userType <= 2) {
+                                $("#gridManager").show();
+                            }
+                        } else {
+                            columnsName = header;
+                            $($tbl).data("gridManager", false);
+                        }
+                        $handsonTable.data("header", columnsName);
+                        $handsonTable.data("parentHeader", columnsName);
+                        var width = void 0;
+                        var settings = $($tbl).data("options");
+                        if (typeof settings !== "undefined") {
+                            if (typeof settings.onSuccess !== "undefined") {
+                                var virtual = virtualWithOutHeader;
+                                var columnNameap = columnsName;
+                                virtual.unshift(columnsName);
+                                settings.onSuccess(virtual, columnNameap, objArr);
+                            }
+                        }
+                        settings.element = $($tbl);
+                        var isFrozen = 0;
+                        if (settings.fixedColumnsLeft !== 0 || settings.fixedColumnsLeft !== void 0) {
+                            isFrozen = settings.fixedColumnsLeft;
+                        }
+                        if (objArr.Object[1].WidthOfColumn !== undefined) {
+                            width = objArr.Object[1].WidthOfColumn.split(",");
+                            var frozen = objArr.Object[1].IsFrozen.split(",");
+                            for (var i = 0; i < frozen.length; i++) {
+                                if (frozen[i] === "1") {
+                                    if (columnsName.indexOf("SN") !== -1) {
+                                        isFrozen = i + 2;
+                                    } else
+                                        isFrozen = i + 1;
+                                    break;
+                                }
+                            }
+                            if (columnsName.indexOf("SN") !== -1) {
+                                width.unshift(50);
+                            }
+                            //KRG: Code seems not usable.
+                            //for (let j = 0; j < width.length; j++) {
+                            //    var wid = parseInt(width[j], 10);
+                            //    if (wid < 21 && wid !== 1) {
+                            //        //width[j] = "28";
+                            //    }
+                            //}
+                        }
+                        $pageWraper = settings.pageWraper;
+                        settings.allowFilteringAndPaging = settings.allowFilteringAndPaging === undefined ? true : settings.allowFilteringAndPaging;
+                        $.extend($.fn.selectionAppModel.configGetData, settings);
+                        $.extend(configGetData, settings);
+                        settings.isEditAble = settings.isEditAble === undefined || settings.isEditAble === "false"
+                            ? false
+                            : settings.isEditAble;
+                        useCheckBoxs = settings.useCheckBox;
+                        $($tbl).data("data", modifiedDt);
+                        var nimFrame = $($tbl).data("selectedValue");
+                        $($tbl).data("selectedValue", test);
+                        $($tbl).data("mappedValue", test1);
+                        const hotConfig = handleHotJsonDataRequestsPreparation(modifiedDt, header, columnName, sortOrder, sortIcon, dataTypes, icon, useCheckBoxs, columnsName, width, isFrozen, settings, $tbl, status, nimFrame);
+                        $.extend(hotConfig, settings);
+                        $($tbl).removeData("handsontable");
+                        $($tbl).handsontable(hotConfig);
+                        hot = $($tbl).handsontable("getInstance");
+                        handleGridManagerFromPage.inithandleConfigGridClick($("#gridManager", settings.pageWraper), control, $($tbl));
+
+                        //$(hot.view.wt.wtScrollbars.horizontal.scrollHandler).scrollLeft(scsrollLeftPosition);
+                        settings.handsontableInstance = $($tbl).handsontable("getInstance");;
+                        handlefirstColumnSize($tbl);
+                    }
+
+                },
+                function (results) {
+                    //console.log(results);
+                },
+                function (results) {
+
+                    const objArr = JSON.parse(results.responseText);
+                    if (objArr.Object[0].length > 0) {
+                        handlePopoversToggleOnBodyClick();
+                        handlePopOverMove();
+                        const currentPage = parseInt(objArr.Object[1].CurrentPage);
+                        const nextPage = parseInt(objArr.Object[1].NextPage);
+                        const totalItems = parseInt(objArr.Object[1].TotalItems);
+                        const sortOrder = objArr.Object[1].SortIcon === "fa-sort-asc" ? "ASC" : "DESC";
+                        const colName = objArr.Object[1].ColumnName == null
+                            ? ""
+                            : objArr.Object[1].ColumnName;
+                        const sortData = colName + ":" + sortOrder;
+
+                        var start = (currentPage - 1) * itemsPerPage(options) + 1, end = totalItems;
+                        if (itemsPerPage(options) < totalItems) {
+                            end = itemsPerPage(options) * currentPage;
+                            if (end > totalItems) {
+                                end = totalItems;
+                            }
+                        }
+                        $(".btn-prev-page", options.pageWraper)
+                            .attr("data-page", currentPage === 1 ? currentPage : currentPage - 1)
+                            .data("sort", sortData);
+                        currentPage <= 1
+                            ? $(".btn-prev-page", options.pageWraper).addClass("disabled")
+                            : $(".btn-prev-page", options.pageWraper).removeClass("disabled");
+                        //input
+                        $(".currentPageInput", options.pageWraper)
+                            .val(currentPage)
+                            .attr("readonly", end === totalItems ? true : false);
+                        //next
+                        end === totalItems
+                            ? $(".btn-next-page", options.pageWraper).addClass("disabled")
+                            : $(".btn-next-page", options.pageWraper).removeClass("disabled");
+                        $(".btn-next-page", options.pageWraper).attr("data-page", nextPage).data("sort", sortData);
+                        // e.g. "21-30 of 193 items" Display record's info
+                        $("#record-info-text", options.pageWraper)
+                            .html(`<b>${totalItems === 0 ? 0 : start}</b> to <b>${end}</b> of <b>${totalItems}</b> records.`);
+                        $(".btn-page-to-go", options.pageWraper).data("sort", sortData);
+                    }
+                    $(options.mainContainer).unblock();
+                }
+            );
+        }, 400);
+        //console.timeEnd("handleHotJsonDataRequests");
+
+    };
+
+    var handleSubAjaxRequestFormMethod = function (element, clear) {
+        var settings = $(element).data("options");
+        $mainContainer = settings.mainContainer;
+        $handsonTable = element;
+        $rootUrl = settings.url;
+        if (settings.paramsData !== undefined) {
+            $.extend($.fn.selectionAppModel.configGetData.paramsData, settings.paramsData);
+        }
+        if (typeof clear === "undefined") {
+            $(element).data("sort", []);
+            $(element).data("selectedValue", []);
+            $(element).data("mappedValue", []);
+        }
+        var sortElem = $(element).data("sort");
+        var sortOrd = clear === "btnClear" && sortElem !== undefined ? sortElem[1] : "",
+            orderCol = clear === "btnClear" && sortElem !== undefined ? sortElem[0] : "";
+        const objParam = {
+            currentPage: $(".currentPageInput", settings.mainContainer).val(),
+            sortOrder: sortOrd,
+            orderColumn: orderCol,
+            itemsPerPage: $("select.items-per-page.select3 :selected", settings.mainContainer).val(),
+            filterExpression: $(element).data("filterArray"),
+            postData: postData,
+            hrmPostData: postData
+        };
+        $.extend(objParam, settings.paramsData);
+        setImmediate(handleHotJsonDataRequests($rootUrl, objParam, element, clear));
+
+    };
+
+    var handleFilterApplyClick = function (selector, columnOptionsValue, element) {
+        $(selector).on("click", function (e) {
+            e.preventDefault();
+            var options = $(element).data("options");
+            $rootUrl = options.url;
+            $mainContainer = options.mainContainer;
+            if (options.paramsData !== undefined) {
+                $.extend($.fn.selectionAppModel.configGetData.paramsData, options.paramsData);
+            }
+            const $this = $(this);
+
+            handleBlockUiForTable($mainContainer);
+            const elems = $this.parents("div.popover-content").find("input, select");
+            const filterColumn = $(elems[1]).data('column');
+            var notPushed = true;
+
+            const arr = $(element).data("filterArray").length;//filterExpression.length;
+            for (let i = 0; i < arr; i++) {
+                if ($(element).data("filterArray")[i][0] === filterColumn) {
+                    $(element).data("filterArray")[1] = elems[0].value;
+                    $(element).data("filterArray")[2] = elems[1].value;
+                    $(element).data("filterArray")[3] = elems[2].value;
+                    $(element).data("filterArray").splice(i);
+                    break;
+                } else {
+                    if (notPushed) {
+                        $(element).data("filterArray").push([filterColumn, elems[0].value, elems[1].value, elems[2].value]);
+                        notPushed = false;
+                    }
+                }
+            }
+
+            if ($(element).data("filterArray").length <= 0) {
+                $(element).data("filterArray").push([filterColumn, elems[0].value, elems[1].value, elems[2].value]);
+            }
+
+            const column = function () {
+                return columnOptionsValue[3].length > 0 ? columnOptionsValue[0] : "";
+            },
+                sortOrder = function () {
+                    if (columnOptionsValue[3].length > 0) {
+                        return columnOptionsValue[2] === "fa-sort-asc" ? "ASC" : "DESC";
+                    }
+                    return "";
+                };
+
+
+            var sortElem = $(element).data("sort");
+            var sortOrd = sortElem !== undefined ? sortElem[1] : sortOrder,
+                orderCol = sortElem !== undefined ? sortElem[0] : column;
+            setImmediate(handleHotJsonDataRequests($rootUrl,
+                getParameterForAjax(null, sortOrd, orderCol, element),
+                element,
+                "filter"));
+
+            $("button.data-filter.popovers", $mainContainer).popover("hide");
+            return false;
+        });
+    };
+
+    var handleSearchButtonClick = function (sender, element) {
+        $(sender).on("click", function (e) {
+            e.preventDefault();
+            //const form = $("#gridFilterForm");
+            var frm = $(document.forms);
+            var data = frm.serializeFormJSON();
+            var testDate = {};
+            $.each(data, function (index, value) {
+                if ($.isArray(value)) {
+                    //testDate[index] = value.toString().replace("-1,", "").replace("-1", "");
+                } else {
+                    //testDate[index] = value.replace("-1,", "").replace("-1", "");
+                }
+            });
+            $.extend(data, testDate);
+            postData = data;
+            setImmediate(handleSubAjaxRequestFormMethod(element));
+        });
+    };
+
+    var handleBtnPageToGoClick = function ($selector, element) {
+        $selector.off("click").on("click", function (e) {
+            e.preventDefault();
+            const $this = $(this);
+            var tableId = $(element);
+            var options = $(tableId).data("options");
+            $rootUrl = options.url;
+            $mainContainer = options.mainContainer;
+            if (options.paramsData !== undefined) {
+                $.extend($.fn.selectionAppModel.configGetData.paramsData, options.paramsData);
+            }
+            const $sortData = $this.data("sort").split(":");
+            const column = $sortData[0];
+            const sortOrder = $sortData[1] === "undefined" ? "ASC" : $sortData[1];
+            setImmediate(handleHotJsonDataRequests($rootUrl,
+                getParameterForAjax(null, sortOrder, column, tableId),
+                tableId,
+                "btnGo"));
+            return false;
+        });
+    };
+
+    var handleBtnPrevPageClick = function ($selector, element) {
+        $selector.on("click", function (e) {
+            e.preventDefault();
+            const $this = $(this);
+            var tableId = $(element);
+            var options = $(tableId).data("options");
+            $rootUrl = options.url;
+            $mainContainer = options.mainContainer;
+            if (options.paramsData !== undefined) {
+                $.extend($.fn.selectionAppModel.configGetData.paramsData, options.paramsData);
+            }
+            const prevPage = parseInt($this.attr("data-page"));
+            const $sortData = $this.data("sort").split(":");
+            const column = $sortData[0];
+            const sortOrder = $sortData[1] === "undefined" ? "ASC" : $sortData[1];
+            setImmediate(handleHotJsonDataRequests($rootUrl,
+                getParameterForAjax(prevPage, sortOrder, column, element),
+                tableId,
+                "btnPre"));
+            return false;
+        });
+    };
+
+    var handleBtnNextPageClick = function ($selector, element) {
+        $selector.on("click", function (e) {
+            e.preventDefault();
+            const $this = $(this);
+            setImmediate(function () {
+                var tableId = $(element);
+                var options = $(tableId).data("options");
+                $rootUrl = options.url;
+                $mainContainer = options.mainContainer;
+                if (options.paramsData !== undefined) {
+                    $.extend($.fn.selectionAppModel.configGetData.paramsData, options.paramsData);
+                }
+                const nextPage = parseInt($this.attr("data-page"));
+                const $sortData = $this.data("sort").split(":");
+                const column = $sortData[0];
+                const sortOrder = $sortData[1] === "undefined" ? "ASC" : $sortData[1];
+                var objParam = {
+                    currentPage: nextPage,
+                    sortOrder: sortOrder,
+                    orderColumn: column,
+                    itemsPerPage: $("select.items-per-page.select3 :selected", $mainContainer).val(),
+                    filterExpression: $(tableId).data("filterArray"),
+                    postData: postData,
+                    hrmPostData: postData
+                };
+                $.extend(objParam, options.paramsData);
+                $(element).promise().done(function () {
+                    setImmediate(handleHotJsonDataRequests($rootUrl, objParam, tableId, "btnNext"))
+                });
+            });
+            return false;
+        });
+    };
+
+    var handleUnbindAndBindPagingButton = function (element) {
+        var $pageWrap = $(element).data("options").pageWraper;
+        const $btnNextPage = $(".btn-next-page", $pageWrap);
+        const $btnGo = $(".btn-page-to-go", $pageWrap);
+        const $btnPreviour = $(".btn-prev-page", $pageWrap);
+
+        $btnPreviour.unbind().bind("click", handleBtnPrevPageClick($($btnPreviour), element));
+        $btnNextPage.unbind().bind("click", handleBtnNextPageClick($($btnNextPage), element));
+        $btnGo.unbind().bind("click", handleBtnPageToGoClick($($btnGo), element));
+    };
+
+    var setMaximizeGridHeight = function () {
+
+        var divPrint = $("#reload-alls").length;
+        if (divPrint >= 1) {
+            var profile = 0;
+
+            var nav = $(".navbar-default").length;
+            if (nav >= 1) {
+                profile = profile + 52;
+            } else {
+                profile = profile - 0;
+            }
+            var page = $(".box-footer", $("#reload-alls")).length;
+            if (page >= 1) {
+                profile = profile + 50;
+            } else {
+                profile = profile - 10;
+            }
+            //profile = profile + 166 + 24;
+            var heightOfGrid = $(window).height() - profile;
+            if (heightOfGrid <= 100) {
+                heightOfGrid = 150;
+            }
+            $('.hands-on-table').height(heightOfGrid);
+        }
+    }
+
+    var handleWindowPageSizeControl = function (element) {
+        if (hsGridGlobal.hsGridMode && hsGridGlobal.hsGridMode === 1) {
+            setMaximizeGridHeight();
+        }
+        else {
+
+            var options = $(element).data("options");
+            if (typeof options !== "undefined")
+                if (options !== null) {
+                    if (typeof (options.setGridHeight) !== "undefined") {
+                        $('.hands-on-table').height(options.setGridHeight);
+                    } else {
+                        var divPrint = $("#reload-alls, .reload-alls").length;
+                        if (divPrint >= 1) {
+                            var pageHeaderHeight = $(".main-header").outerHeight() || 0;
+                            var profileHeight = $(".profileheader").outerHeight() || 0;
+                            var profileLeftMenuHeight = 0;
+                            if (profileHeight > 0) {
+                                profileHeight += 25;
+                            }
+                            var headerContHeight = $('.content-header').outerHeight() || 0;
+                            var tabHeight = $(".nav-tabs-custom>.nav.nav-tabs").outerHeight() || 0;
+                            var navHeight = $(".navbar-default:visible").outerHeight() || 0;
+                            var gridPagerHeight = $(".grid-pager").outerHeight() || 0;
+                            var gridFooterHeight = $(".grid-footer").outerHeight() || 0;
+                            var pageFooterHeight = $(".main-footer").outerHeight() || 0;
+                            var gridPageTitleHeight = $(".grid-page-title").outerHeight() || 0;
+
+                            var isPopup = IsWindowPopup();
+
+                            var profile = profileHeight + headerContHeight + tabHeight + navHeight + gridPagerHeight + gridFooterHeight + gridPageTitleHeight;
+                            if (!isPopup)
+                                profile += pageHeaderHeight + pageFooterHeight;
+                            var windowHeight = $(window).height();
+                            var gridHeight = windowHeight - profile - 3;
+
+                            if (gridHeight < profileLeftMenuHeight && profileHeight > 0)
+                                gridHeight = profileLeftMenuHeight - navHeight - tabHeight - gridFooterHeight;
+
+                            if (gridHeight > (windowHeight - pageHeaderHeight - pageFooterHeight))
+                                gridHeight = (windowHeight - pageHeaderHeight - pageFooterHeight);
+
+                            if (gridHeight < 250) {
+                                gridHeight = 250;
+                            }
+
+                            $('.hands-on-table').height(gridHeight);
+                        }
+                    }
+                }
+        }
+    };
+
+    var inithandleWindowPageSizeControl = function (element) {
+        handleWindowPageSizeControl(element);
+    };
+
+    var getInstance = function (element) {
+        return $(element).handsontable("getInstance");
+    };
+    var handlefirstColumnSize = function (element) {
+        var instance = getInstance(element);
+        var settings = $(element).data("options");
+        var colgroup = instance.rootElement.querySelectorAll("colgroup col:nth-child(2)");
+        if (settings.useCheckBox)
+            $(colgroup).css({ width: '50px' });
+    };
+    var getSelectedRow = function (instance) {
+        var $this = instance.element;
+        var settings = $($this).data("options");
+        if (settings.onRowClick === null && settings.onRowClick === undefined) {
+            return "";
+        }
+        var index = $.data($this, "header").indexOf(settings.onRowClick);
+        var handInstance = getInstance($this);
+        var selectedCell = handInstance.getSelected();
+        if (typeof selectedCell === "undefined") {
+            return "";
+        }
+
+        var selection = handInstance.getSelected()[0];
+        var data = handInstance.getDataAtRow(selection)[index];
+        return data;
+    };
+    var getSelectedRowWithCol = function (instance, columnName) {
+        var $this = instance.element;
+        var index = $.data($this, "header").indexOf(columnName);
+        var handInstance = getInstance($this);
+        var selection = handInstance.getSelected()[0];
+        var data = handInstance.getDataAtRow(selection)[index];
+        return data;
+    };
+
+    var getCheckDataInArray = function (element) {
+        var data = [];
+        var instance = getInstance(element);
+        $("input.htCheckboxRendererInput", $(element)).each(function (index, value) {
+            var checkStatus = $(value).get(0).checked;
+            var row = $(this).attr("data-row"), col = $(this).attr("data-col");
+            if (checkStatus) {
+                const checkedData = instance.getData(index, col, index, instance.countCols() - 1);
+                const getData = checkedData[0];
+                if (getData[0] !== null)
+                    data.push(getData);
+            }
+        });
+        return data;
+    };
+    var checkedData = function (element) {
+        var $context = $(element).closest("div").find(".ht_master");
+        var data = [];
+        data = $(element).data("selectedValue");
+        return data;
+    }
+    var mappedData = function (element) {
+        var data1 = [];
+        data1 = $(element).data("mappedValue");
+        return data1;
+    }
+
+    var init = function (setting, element) {
+        $rootUrl = setting.url !== null || setting.url !== undefined || setting.url !== "" ? setting.url : "";
+        useCheckBoxs = setting.useCheckBox !== null || setting.useCheckBox !== undefined ? setting.useCheckBox : true;
+        $mainContainer = setting.mainContainer;
+        $pageWraper = setting.pageWraper;
+        var enableSortingAndFiltering = true
+        if (setting.enableSortingAndFiltering === "undefined")
+            if (setting.enableSortingAndFiltering === null)
+                enableSortingAndFiltering = true;
+        setting.enableSortingAndFiltering = true;
+
+        if (setting.formType === "Index" || setting.formType === undefined) {
+            pagingTemplate.initTemplate($pageWraper);
+            handleSubAjaxRequestFormMethod(element);
+        } else if (setting.formType === "Child") {
+            pagingTemplate.initTemplate($pageWraper);
+            handleSubAjaxRequestFormMethod(element);
+        } else if (setting.formType === "Selection") {
+            handleSearchButtonClick($("#btnSearch"), element);
+            pagingTemplate.initTemplate($pageWraper);
+            $("#btnSearch").trigger("click");
+        } else {
+            return;
+        }
+    };
+
+    var handleReInitHotInstances = function ($element) {
+        var elem = document.getElementById($element.id);
+        var $containers = $(elem);
+        var options = $containers.data("options");
+        var filter = $containers.data("filterArray");
+        var nimble = $containers.data("nimble");
+        var checkedValue = $containers.data("selectedValue");
+        var mappedValue = $containers.data("mappedValue");
+        var nimbleConfig = $containers.data("nimbleConfig");
+        $.data(elem, "options", options);
+        $.data(elem, "filterArray", filter);
+        $.data(elem, "nimble", nimble);
+        $.data(elem, "nimbleConfig", nimbleConfig);
+        $.data(elem, "selectedValue", checkedValue);
+        $.data(elem, "mappedValue", mappedValue);
+        const hotInstance = $containers.handsontable("getInstance");
+        if (hotInstance !== undefined && hotInstance !== null) {
+            hotInstance.destroy(true);
+        }
+
+        $.data($element, "options", options);
+        $.data($element, "filterArray", filter);
+        $.data($element, "nimble", nimble);
+        $.data($element, "nimbleConfig", nimbleConfig);
+        $.data($element, "selectedValue", checkedValue);
+        $.data($element, "mappedValue", mappedValue);
+        return $element;
+    };
+
+    var handleGetColumnAccordingToName = function (array, columnNames, header) {
+
+        var cols;
+        var arr = [];
+        if (typeof columnNames === "string") {
+            if (columnNames.indexOf(",") > -1) {
+                columnNames = columnNames.split(",");
+            }
+        }
+
+        if (Array.isArray(columnNames)) {
+            for (let l = 0; l < columnNames.length; l++) {
+                cols = header.indexOf(columnNames[l]);
+                var jLen = 0;
+                for (let i = 0; i < array.length; i++) {
+                    for (let j = 0; j < array[i].length; j++) {
+                        if (j === jLen) {
+                            arr.push([]);
+                            jLen++;
+                        }
+                        if (j === cols)
+                            arr[i].push(array[i][j]);
+                    }
+                }
+            }
+        } else {
+
+        }
+        const finalDataArray = [];
+        for (let k = 0; k < arr.length; k++) {
+            if ($.isEmptyObject(arr[k]) === false) {
+                finalDataArray.push(arr[k]);
+            }
+        }
+        return finalDataArray;
+    };
+
+    //KRG: removed blank funcation section
+    //var NimbleFrameWork = function() { };
+    var NimbleFrameWork = function (element, options) {
+        this.element = element;
+        this.options = $(this.element).data("options");
+        var defaultOptions = {
+            url: '',
+            useCheckBox: true,
+            manualColumnResize: false,
+            excludeColumn: [],
+            widthOfColumn: [],
+            paramsData: {},
+            formType: '',
+            headerText: [],
+            getCheckedData: function () { },
+            dataSchema: void 0,
+            data: void 0,
+            minSpareRows: 0,
+            fillHandle: false,
+            colWidths: void 0,
+            rowHeaders: void 0,
+            manualRowResize: false,
+            renderAllRows: true,
+            colHeaders: void 0,
+            fixedColumnsLeft: 0,
+            afterRenderAll: void 0,
+            outsideClickDeselects: false,
+            afterSelectionEnd: void 0,
+            wordWrap: true,
+            getHeaderArray: function () { },
+            cellsModifyAndRender: void 0,
+            afterChangeData: void 0,
+            afterSelectionEndByProp: void 0,
+            isEditAble: false,
+            changeDataRow: void 0,
+            onRowClick: void 0,
+            autoColumnSize: undefined,
+            afterSelectionRowEndByProp: void 0,
+            afterSelectionRow: void 0,
+            allowFilteringAndPaging: true,
+            floatRenderer: void 0,
+            afterRowCreate: void 0,
+            destroyInstance: false,
+            handsontableInstance: void 0,
+            onSuccess: function (data, header) { },
+            setGridHeight: void 0,
+            mappedCol: void 0
+        }
+        this.defaultSettings = $.extend(defaultOptions, this.options);
+        var div = document.createElement("DIV");
+        div.id = "nimble-" + this.element.id;
+        //inithandleWindowPageSizeControl(this.element);
+        //KRG: remove realtime page size due to performance.
+        //handlePageResizeInRealTime(this.element);
+        this.load(this.options);
+    };
+
+    NimbleFrameWork.init = function (element, options) {
+        this.settings = options;
+        var setting = this.settings;
+        this.element = element;
+        $rootUrl = setting.url !== null || setting.url !== undefined || setting.url !== "" ? setting.url : "";
+        useCheckBoxs = setting.useCheckBox !== null || setting.useCheckBox !== undefined ? setting.useCheckBox : true;
+        $mainContainer = setting.mainContainer;
+        $pageWraper = setting.pageWraper;
+        this.handleSubAjaxRequestFormMethod = function (clear) {
+            var settings = $(this.element).data("options");
+            $mainContainer = settings.mainContainer;
+            $handsonTable = element;
+            $rootUrl = settings.url;
+            if (settings.paramsData !== undefined) {
+                $.extend(this.defaultOptions, settings.paramsData);
+            }
+            var sortElem = $(element).data("sort");
+            var sortOrd = clear === "btnClear" && sortElem !== undefined ? sortElem[1] : "",
+                orderCol = clear === "btnClear" && sortElem !== undefined ? sortElem[0] : "";
+
+            const objParam = {
+                currentPage: $(".currentPageInput", settings.mainContainer).val(),
+                sortOrder: sortOrd,
+                orderColumn: orderCol,
+                itemsPerPage: $("select.items-per-page.select3 :selected", settings.mainContainer).val(),
+                filterExpression: $(this.element).data("filterArray"),//filterExpression,
+                postData: postData,
+                hrmPostData: postData
+            };
+            $.extend(objParam, settings.paramsData);
+            setImmediate(handleHotJsonDataRequests(setting.url, objParam, this.element, clear));
+
+        };
+
+        if (setting.formType === "Index" || setting.formType === undefined) {
+            pagingTemplate.initTemplate($pageWraper);
+            this.handleSubAjaxRequestFormMethod();
+
+        } else if (setting.formType === "Child") {
+            pagingTemplate.initTemplate($pageWraper);
+            this.handleSubAjaxRequestFormMethod();
+
+        } else if (setting.formType === "Selection") {
+            handleSearchButtonClick($("#btnSearch"), element);
+            pagingTemplate.initTemplate($pageWraper);
+            $("#btnSearch").trigger("click");
+
+        } else {
+            return;
+        }
+    };
+
+    NimbleFrameWork.prototype = {
+        constructor: NimbleFrameWork,
+        load: function (settings) {
+            $rootUrl = settings.url !== null || settings.url !== undefined || settings.url !== "" ? settings.url : "";
+            useCheckBoxs = settings.useCheckBox !== null || settings.useCheckBox !== undefined ? settings.useCheckBox : true;
+            $mainContainer = settings.mainContainer;
+            $pageWraper = settings.pageWraper;
+
+            if (settings.formType === "Index" || settings.formType === undefined) {
+                pagingTemplate.initTemplate($pageWraper);
+                handleSubAjaxRequestFormMethod(this.element);
+            } else if (settings.formType === "Child") {
+                pagingTemplate.initTemplate($pageWraper);
+                handleSubAjaxRequestFormMethod(this.element);
+            } else if (settings.formType === "Selection") {
+                handleSearchButtonClick($("#btnSearch"), this.element);
+                pagingTemplate.initTemplate($pageWraper);
+                $("#btnSearch").trigger("click");
+            } else {
+                return;
+            }
+        },
+        getCheckedItem: function () {
+            return checkedData(this.element);
+        },
+        getAllData: function (row, col, rowEnd, colEnd) {
+            const instance = $(this.element).data("handsontable");
+            var data;
+            if (row === undefined || row === null) {
+                data = instance.getData();
+                data.unshift($(this.element).data("header"));
+                return data;
+            }
+            data = instance.getData(row, col, rowEnd, colEnd);
+            data.unshift($(this.element).data("header"));
+            return data;
+        },
+        getSelected: function () {
+            const instance = $(this.element).data("handsontable");
+            return instance.getSelected();
+        },
+        getDataForDataAction: function (rowStart, colStart, rowEnd, colEnd, columnIndex) {
+
+            const instance = $(this.element).data("handsontable");
+            const data = instance.getData(rowStart, colStart, rowEnd, colEnd);
+            const returnText = data[0][columnIndex];
+            return returnText;
+        },
+        getInstance: function () {
+            return getInstance(this.element);
+        },
+        getDataInstance: function () {
+            $.data("nimbleFramework", $(this.element).data("handsontable"));
+            return $handsonTable.data("handsontable");
+        },
+        getHeaderArray: function () {
+            var header = [];
+            header = $(this.element).data("header");
+            return header;
+        },
+        getData: function () {
+            var data = getCheckDataInArray(this.element);
+            return data;
+        },
+        getReloadOnSuccess: function () {
+            handleSubAjaxRequestFormMethod(this.element);
+        },
+        getSelectedRow: function () {
+            return getSelectedRow(this);
+        },
+        getSelectedCell: function (columnName) {
+            if (typeof columnName === "undefined")
+                return getSelectedRow(this);
+            else
+                return getSelectedRowWithCol(this, columnName);
+        },
+        getDataWithHeader: function () {
+            const data = this.getData();
+            data.unshift(this.getHeaderArray());
+            return data;
+        },
+        getOrderByCol: function () {
+            return getOrderByCol(this.element);
+        },
+        getColumnIndexForPostBack: function (headerColName) {
+
+            if (this.options.onRowClick !== void 0) {
+                const header = this.getHeaderArray();
+                return header.indexOf(this.options.onRowClick);
+            }
+            if (headerColName === null || headerColName === undefined) {
+                return 1;
+            } else {
+                const header = this.getHeaderArray();
+                return header.indexOf(headerColName);
+            }
+        },
+        reload: function () {
+            var options = $(this.element).data("options");
+            handleReInitHotInstances(this.element);
+            $(this.element).selectionAppModel(options);
+
+        },
+        init: function (settings) {
+            var options = $.extend({}, $.fn.selectionAppModel.configGetData, settings);
+            init(options, this.element);
+        },
+        reInitAllData: function () {
+            var $elem = handleReInitHotInstances($(this.element)[0]);
+            this.element = document.getElementById($elem.id);
+            inithandleWindowPageSizeControl(this.element);
+            return this.element;
+        },
+        getCheckedboxValue: function () {
+            return $(this.element).data("selectedValue");
+        },
+        handleUpdateSettings: function (configure) {
+            var header = $(this.element).data("header");
+            var instance = this.getInstance();
+            var options = this.options;
+            var dataTypes = $(this.element).data("dataTypes");
+            var columnName = $(this.element).data("orderByCol");
+            var configCells = {
+                cells: function (row, col, prop) {
+                    var ele = this;
+                    var cellProperties = {};
+                    if (header[col] === "SN") {
+                        if (options.useCheckBox) {
+                            //KRG: Avoid reading whole row and took only data of related cell.
+                            var index = options.onRowClick === undefined ? 1 : header.indexOf(options.onRowClick);
+                            var tsts = ele.instance.getDataAtCell(row, index);
+
+                            //var checkData = ele.instance.getDataAtRow(row);
+                            //var index = options.onRowClick === undefined
+                            //    ? 1
+                            //    : header.indexOf(options.onRowClick);
+                            //var tsts = checkData[index];
+
+                            var checkInput = '<input type="checkbox" id="selectSingle" class="htCenter htMiddle selectSingle htCheckboxRendererInput"';
+                            checkInput += ' value="' + tsts + '" data-row="' + row + '" data-col="' + col + '" ';
+                            return {
+                                renderer: function (instance, td, rows, cols, props, value, cellProperties) {
+                                    window.Handsontable.renderers.CheckboxRenderer.apply(this, arguments);
+                                    checkInput += value === true ? 'checked=checked' : '';
+                                    checkInput += ' />';
+                                    td.innerHTML = checkInput;
+                                    td.style.textAlign = 'center';
+                                },
+                                type: 'checkbox'
+                            };
+                        } else {
+                            cellProperties.editor = "text";
+                            cellProperties.readOnly = true;
+                        }
+                    }
+                    else {
+                        if (options.cellsModifyAndRender !== undefined) {
+                            options.cellsModifyAndRender(row, col, prop, header, cellProperties, instance, columnName);
+                            if (dataTypes[col] === "date") {
+                                var colH = dataTypes[col] === "date";
+                                return {
+                                    renderer: function (instance, td, rows, cols, props, value, iCellProperties) {
+                                        window.Handsontable.renderers.TextRenderer.apply(this, arguments);
+                                        if (td.innerHTML !== "") {
+                                            if (value !== null) {
+                                                var dates = value.split("T")[0];
+                                                td.innerHTML = dates;
+                                            }
+                                        }
+                                        if (cellProperties.editor === "date") {
+                                            if (colH) {
+                                                iCellProperties.editor = "date";
+                                                td.className += " datepicker";
+                                            } else {
+                                                iCellProperties.editor = "text";
+                                                td.className += " myNepaliDate";
+                                            }
+                                        }
+                                    },
+                                    type: cellProperties.editor === "date" ? "date" : "text",
+                                    readOnly: cellProperties.editor === "date" ? false : true,
+                                    correctFormat: true,
+                                    defaultDate: ''
+                                };
+                            }
+                            if (dataTypes[col] === "float" || dataTypes[col] === "decimal") {
+                                var dta = ele.instance.getDataAtCell(row, col);
+                                return {
+                                    renderer: function (instance, td, rows, cols, props, value, iCellProperties) {
+                                        //window.Handsontable.NumericCell.renderer.apply(this, arguments);
+                                        Handsontable.renderers.NumericRenderer.apply(this, arguments);
+                                        if (td.innerHTML !== "") {
+                                            if (value !== null) {
+                                                td.innerHTML = floorFigure(value);
+                                            }
+                                            if (options.floatRenderer !== void 0) {
+                                                options.floatRenderer(instance, td, rows, cols, props, value, iCellProperties, header);
+                                            }
+                                            if (typeof configure === "object") {
+                                                if (configure.floatRenderer !== undefined)
+                                                    configure.floatRenderer(instance, td, rows, cols, props, value, iCellProperties, header);
+                                            }
+                                        }
+                                    },
+                                    readOnly: cellProperties.readOnly === true ? true : false,
+                                    type: "numeric",
+                                    allowInvalid: dta === '' ? true : false
+                                };
+                            }
+                        } else if (configure.cells != undefined) {
+                            configure.cells(row, col, prop);
+                        }
+                        else {
+                            cellProperties.editor = "text";
+                            cellProperties.readOnly = true;
+                        }
+                    }
+                    if (typeof configure === "object") {
+                        if (typeof configure.cells !== "undefined")
+                            $.extend(cellProperties, configure.cells(row, col, prop, header, cellProperties));
+                    }
+
+                    if (typeof configure === "function") {
+                        cellProperties = configure(row, col, prop, header, cellProperties);
+                    }
+
+                    return cellProperties;
+                }
+            };
+            if (typeof configure.data !== "undefined") {
+                configCells.dataSchema = function () {
+                    var schemaObj = {};
+                    if (!configure.data.length > 0) {
+                        for (var i = 0, len = header.length; i < len; i++) {
+                            schemaObj[header[i]] = null;
+                        }
+                    } else {
+                        schemaObj = [];
+                    }
+                    return schemaObj;
+                },
+                    configCells.data = configure.data;
+            }
+            handleHotUpdateSettings(instance, configCells);
+        },
+        refresh: function () {
+
+            //$(document).off("click");
+            NimbleFrameWork.call(this, this.element, this.options);
+            if ($) {
+                // Bind new instance of slider to the element
+                $.data(this.element, 'nimble', this);
+            }
+            return this;
+        },
+        getFilterOfGrid: function () {
+            var filter = $(this.element).data("filterArray");
+            return filter;
+        },
+        getSortOrder: function () {
+            var sort = $(this.element).data("sort");
+            return sort;
+        },
+        getDataWithColumn: function (colNameToGet) {
+            return handleGetColumnAccordingToName(this.getAllData(), colNameToGet, this.getHeaderArray());
+        },
+        getMappedItems: function () {
+            return mappedData(this.element);
+        },
+        getSelectedMappedCell: function () {
+            if (this.options.mappedCol)
+                return getSelectedRowWithCol(this, this.options.mappedCol);
+            else return "";
+        },
+    };
+
+    var oldCatch = $.fn.selectionAppModel;
+    $.fn.selectionAppModel = function (options) {
+        $handsonTable = $(this);
+        var instance = null;
+        var filterArray = [];
+        var selectedValue = [];
+        var mappedValue = [];
+        this.each(function () {
+            $.data(this, "nimble", null);
+            $.data(this, 'options', options);
+            $.data(this, 'filterArray', filterArray);
+            $.data(this, "selectedValue", selectedValue);
+            $.data(this, "mappedValue", mappedValue);
+            $.data(this, "sort", []);
+            var nimbleConfig = $.extend({}, this.configGetData, options);
+            $.extend(configGetData, options);
+            $.data(this, "nimbleConfig", nimbleConfig);
+            if (!$.data(this, 'nimble')) {
+                instance = new NimbleFrameWork(this, nimbleConfig);
+                $.data(this, 'nimble', instance);
+            }
+        });
+        return this;
+    };
+    configGetData = $.fn.selectionAppModel.configGetData = {
+        url: '',
+        useCheckBox: true,
+        manualColumnResize: false,
+        excludeColumn: [],
+        widthOfColumn: [],
+        paramsData: {},
+        formType: '',
+        headerText: [],
+        getCheckedData: function () { },
+        dataSchema: void 0,
+        data: void 0,
+        minSpareRows: 0,
+        fillHandle: false,
+        colWidths: void 0,
+        rowHeaders: void 0,
+        manualRowResize: false,
+        renderAllRows: true,
+        stretchH: "all",
+        colHeaders: void 0,
+        fixedColumnsLeft: 0,
+        afterRenderAll: void 0,
+        outsideClickDeselects: false,
+        afterSelectionEnd: void 0,
+        wordWrap: true,
+        getHeaderArray: function () { },
+        cellsModifyAndRender: void 0,
+        afterChangeData: void 0,
+        afterSelectionEndByProp: void 0,
+        isEditAble: false,
+        changeDataRow: void 0,
+        onRowClick: void 0,
+        autoColumnSize: undefined,
+        afterSelectionRowEndByProp: void 0,
+        afterSelectionRow: void 0,
+        allowFilteringAndPaging: true,
+        floatRenderer: void 0,
+        afterRowCreate: void 0,
+        destroyInstance: false,
+        handsontableInstance: void 0,
+        onSuccess: function (data, header) { },
+        setGridHeight: void 0,
+        enableSortingAndFiltering: true
+    };
+
+    /* Frame Work  NO CONFLICT
+      * =================== */
+    $.fn.selectionAppModel.noConflict = function () {
+        $.fn.selectionAppModel = oldCatch;
+        return this;
+    };
+}(jQuery));

@@ -28,6 +28,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <Link href="/app/reports">Reports</Link>
           <Link href="/app/staff">Staff</Link>
           <Link href="/app/sections">Sections</Link>
+          {user.isSuperuser ? <Link href="/app/users">Users</Link> : null}
           <Link href="/app/profile">Profile</Link>
         </nav>
         <div className="mt-auto space-y-3 rounded-xl border border-slate-700/60 bg-slate-900/70 p-3 text-xs text-slate-100 shadow-lg shadow-black/70">

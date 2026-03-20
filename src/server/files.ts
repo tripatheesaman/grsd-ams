@@ -17,6 +17,20 @@ export async function writeUpload(file: File) {
   };
 }
 
+export async function writeUploadNamed(file: File, desiredName: string) {
+  ensureMediaDirs();
+  const bytes = await file.arrayBuffer();
+  const buffer = Buffer.from(bytes);
+  const filename = desiredName.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const fullPath = path.join(UPLOAD_ROOT, filename);
+  await fs.writeFile(fullPath, buffer);
+  return {
+    relativePath: path.join("uploads", filename).replaceAll("\\", "/"),
+    fullPath,
+    filename,
+  };
+}
+
 export function absoluteFromMedia(relativePath: string) {
   const decoded = (() => {
     try {
@@ -40,5 +54,21 @@ export function processedOutputFor(originalAbsolutePath: string) {
     filename,
     fullPath: path.join(PROCESSED_ROOT, filename),
     relativePath: path.join("processed", filename).replaceAll("\\", "/"),
+  };
+}
+
+export async function renameUploadedFile(relativePath: string, desiredName: string) {
+  ensureMediaDirs();
+  const currentAbs = absoluteFromMedia(relativePath);
+  const filename = desiredName.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const targetAbs = path.join(UPLOAD_ROOT, filename);
+  try {
+    await fs.unlink(targetAbs);
+  } catch {}
+  await fs.rename(currentAbs, targetAbs);
+  return {
+    relativePath: path.join("uploads", filename).replaceAll("\\", "/"),
+    fullPath: targetAbs,
+    filename,
   };
 }

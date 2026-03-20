@@ -4,28 +4,16 @@ import path from "node:path";
 
 export async function GET(req: Request) {
   try {
+    const origin = new URL(req.url).origin;
     const bookmarkletPath = path.join(process.cwd(), "public", "extension", "bookmarklet.js");
-    const bookmarkletCode = await fs.readFile(bookmarkletPath, "utf-8");
-
-    // Keep original line breaks to avoid breaking single-line comments.
-    const cleaned = bookmarkletCode.trim();
-    if (!cleaned) {
-      throw new Error("Bookmarklet code is empty");
+    const raw = (await fs.readFile(bookmarkletPath, "utf-8")).trim();
+    const code = raw.replace(/__GRSD_APP_ORIGIN__/g, origin);
+    if (!code) {
+      return NextResponse.json({ error: "Bookmarklet code is empty" }, { status: 500 });
     }
-    const bookmarkletUrl = "javascript:" + cleaned;
-    
-    return NextResponse.json({ 
-      bookmarklet: bookmarkletUrl,
-      instructions: [
-        "Right-click the 'Sync to NAC' button below",
-        "Select 'Bookmark this link' or 'Add to Favorites'",
-        "When on the external system page, click the bookmark to sync"
-      ]
-    });
-  } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to generate bookmarklet" },
-      { status: 500 }
-    );
+    return NextResponse.json({ bookmarklet: "javascript:" + code });
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : "Failed to load bookmarklet" }, { status: 500 });
   }
 }
+

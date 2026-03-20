@@ -3,8 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { requireApiUser } from "@/server/auth";
 import { prisma } from "@/server/prisma";
-import { absoluteFromMedia, processedOutputFor, writeUpload } from "@/server/files";
-import { processAttendance } from "@/server/attendance";
+import { writeUpload, writeUploadNamed } from "@/server/files";
 import { expectedOriginForRequest, mutationOriginError } from "@/server/security";
 import * as XLSX from "xlsx";
 
@@ -14,12 +13,49 @@ type ExtensionTable = {
   data: ExtensionRow[];
 };
 
+type Period = { year: number; month: number };
+
 function isExtensionTable(value: unknown): value is ExtensionTable {
   if (!value || typeof value !== "object") {
     return false;
   }
   const maybe = value as Partial<ExtensionTable>;
   return Array.isArray(maybe.headers) && Array.isArray(maybe.data);
+}
+
+function normalizeHeader(value: unknown) {
+  return String(value ?? "").toLowerCase().replace(/[\s._-]+/g, "");
+}
+
+function getPeriodFromLogsTables(tables: ExtensionTable[]): Period | null {
+  const datePattern = /^(\d{4})\/(\d{1,2})\/(\d{1,2})$/;
+  for (const table of tables) {
+    const dateHeader = table.headers.find((h) => normalizeHeader(h) === "attendancedatenepali");
+    for (const row of table.data) {
+      if (dateHeader) {
+        const raw = String(row[dateHeader] ?? "").trim();
+        const match = datePattern.exec(raw);
+        if (match) {
+          const year = Number.parseInt(match[1], 10);
+          const month = Number.parseInt(match[2], 10);
+          if (year >= 2000 && month >= 1 && month <= 12) {
+            return { year, month };
+          }
+        }
+      }
+      for (const v of Object.values(row)) {
+        const raw = String(v ?? "").trim();
+        const match = datePattern.exec(raw);
+        if (!match) continue;
+        const year = Number.parseInt(match[1], 10);
+        const month = Number.parseInt(match[2], 10);
+        if (year >= 2000 && month >= 1 && month <= 12) {
+          return { year, month };
+        }
+      }
+    }
+  }
+  return null;
 }
 
 export async function POST(req: Request) {
@@ -43,6 +79,13 @@ export async function POST(req: Request) {
       : "";
     const rawTables = (body as { tables?: unknown[] })?.tables;
     const tables: ExtensionTable[] = Array.isArray(rawTables) ? rawTables.filter(isExtensionTable) : [];
+    const importType = typeof (body as { importType?: unknown })?.importType === "string"
+      ? String((body as { importType?: string }).importType).toLowerCase()
+      : "attendance";
+    const periodYearRaw = (body as { periodYear?: unknown })?.periodYear;
+    const periodMonthRaw = (body as { periodMonth?: unknown })?.periodMonth;
+    const periodYear = typeof periodYearRaw === "number" ? periodYearRaw : Number.parseInt(String(periodYearRaw ?? ""), 10);
+    const periodMonth = typeof periodMonthRaw === "number" ? periodMonthRaw : Number.parseInt(String(periodMonthRaw ?? ""), 10);
 
     if (tables.length === 0) {
       return NextResponse.json({ error: "No table data provided" }, { status: 400 });
@@ -222,48 +265,45 @@ export async function POST(req: Request) {
     });
 
     const excelBuffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
-    const filename = `extension_sync_${Date.now()}.xlsx`;
-    
-    const file = new File([excelBuffer], filename, { 
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" 
-    });
 
-    const uploaded = await writeUpload(file);
-    const created = await prisma.processedFile.create({
-      data: {
-        userId: user.id,
-        originalFile: uploaded.relativePath,
-        status: "processing",
-      },
-    });
+    const detectedPeriod = getPeriodFromLogsTables(tables);
+    const period: Period | null = detectedPeriod ?? (
+      Number.isFinite(periodYear) && Number.isFinite(periodMonth) && periodYear >= 2000 && periodMonth >= 1 && periodMonth <= 12
+        ? { year: periodYear, month: periodMonth }
+        : null
+    );
 
-    const inputPath = absoluteFromMedia(uploaded.relativePath);
-    const output = processedOutputFor(inputPath);
-    const processed = await processAttendance(inputPath, output.fullPath);
-    if (!processed.success) {
-      await prisma.processedFile.update({
-        where: { id: created.id },
-        data: { status: "failed", errorMessage: processed.error ?? "Processing failed" },
+    if (importType === "logs") {
+      if (!period) {
+        return NextResponse.json({ error: "Could not determine log month/year. Please provide period." }, { status: 400 });
+      }
+      const month = String(period.month).padStart(2, "0");
+      const filename = `hrms_logs_${period.year}_${month}.xlsx`;
+      const file = new File([excelBuffer], filename, { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      await writeUploadNamed(file, filename);
+
+      return NextResponse.json({
+        success: true,
+        message: `Logs imported for ${period.year}-${month}.`,
+        importType: "logs",
+        periodYear: period.year,
+        periodMonth: period.month,
       });
-      return NextResponse.json(
-        { error: processed.error ?? "Processing failed" },
-        { status: 500 },
-      );
     }
 
-    await prisma.processedFile.update({
-      where: { id: created.id },
-      data: {
-        status: "completed",
-        processedFile: output.relativePath,
-        errorMessage: null,
-      },
+    const filename = `attendance_import_${Date.now()}.xlsx`;
+    const file = new File([excelBuffer], filename, { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const uploaded = await writeUpload(file);
+
+    const record = await prisma.processedFile.create({
+      data: { userId: user.id, originalFile: uploaded.relativePath, status: "pending_logs", processedFile: null, errorMessage: null },
     });
 
     return NextResponse.json({
       success: true,
-      message: "Data synced and processed successfully.",
-      fileId: created.id.toString(),
+      message: "Attendance imported. Waiting for your choice to process with/without logs.",
+      importType: "attendance",
+      fileId: record.id.toString(),
     });
   } catch (error) {
     return NextResponse.json(
