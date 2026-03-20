@@ -1,13 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { withBasePath } from "@/lib/basePath";
 
 export default function StaffDeleteButton({ id }: { id: string }) {
   const router = useRouter();
 
   async function onDelete() {
     if (!confirm("Delete this staff member?")) return;
-    await fetch(`/api/staff/${id}`, { method: "DELETE" });
+    await fetch(withBasePath(`/api/staff/${id}`), { method: "DELETE" });
     router.refresh();
   }
 

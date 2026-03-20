@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { withBasePath } from "@/lib/basePath";
 
 type CapturedTable = { idx: number; h: string[]; d: Record<string, unknown>[]; cnt: number };
 type ImportType = "attendance" | "logs";
@@ -55,7 +56,7 @@ export default function ImportBridgePage() {
       setMessage("Staging data…");
 
       const stage = async () => {
-        const res = await fetch("/api/import/stage", {
+        const res = await fetch(withBasePath("/api/import/stage"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
@@ -77,7 +78,7 @@ export default function ImportBridgePage() {
       };
 
       const commit = async (periodYear?: number, periodMonth?: number) => {
-        const res = await fetch("/api/import/commit", {
+        const res = await fetch(withBasePath("/api/import/commit"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",

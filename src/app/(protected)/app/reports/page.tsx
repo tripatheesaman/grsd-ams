@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireSessionUser } from "@/server/auth/session";
 import { departmentScopedWhere } from "@/server/authorization/permissions";
 import { prisma } from "@/server/db/prisma";
+import { withBasePath } from "@/lib/basePath";
 
 type PageProps = {
   searchParams: Promise<{
@@ -87,21 +88,21 @@ export default async function ReportsPage({ searchParams }: PageProps) {
                   <td>{new Date(row.createdAt).toLocaleString()}</td>
                   <td>
                     {downloadable ? (
-                      <a className="nac-btn-secondary px-2.5 py-1.5 text-xs" href={`/api/files/${id}/detailed-attendance-report`}>Download</a>
+                      <a className="nac-btn-secondary px-2.5 py-1.5 text-xs" href={withBasePath(`/api/files/${id}/detailed-attendance-report`)}>Download</a>
                     ) : (
                       <span className="text-xs text-slate-500">Not ready</span>
                     )}
                   </td>
                   <td>
                     {downloadable ? (
-                      <a className="nac-btn-secondary px-2.5 py-1.5 text-xs" href={`/api/files/${id}/monthly-wages-report`}>Download</a>
+                      <a className="nac-btn-secondary px-2.5 py-1.5 text-xs" href={withBasePath(`/api/files/${id}/monthly-wages-report`)}>Download</a>
                     ) : (
                       <span className="text-xs text-slate-500">Not ready</span>
                     )}
                   </td>
                   <td>
                     {downloadable ? (
-                      <a className="nac-btn-secondary px-2.5 py-1.5 text-xs" href={`/api/files/${id}/segregation-report`}>Download</a>
+                      <a className="nac-btn-secondary px-2.5 py-1.5 text-xs" href={withBasePath(`/api/files/${id}/segregation-report`)}>Download</a>
                     ) : (
                       <span className="text-xs text-slate-500">Not ready</span>
                     )}

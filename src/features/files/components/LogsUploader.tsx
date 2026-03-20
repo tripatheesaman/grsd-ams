@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { withBasePath } from "@/lib/basePath";
 
 type Props = {
   fileId: string | null;
@@ -24,7 +25,7 @@ export default function LogsUploader({ fileId, hasLogs }: Props) {
     try {
       const form = new FormData();
       form.append("file", file);
-      const res = await fetch(`/api/files/${fileId}/logs`, {
+      const res = await fetch(withBasePath(`/api/files/${fileId}/logs`), {
         method: "POST",
         body: form,
         credentials: "include",
@@ -46,7 +47,7 @@ export default function LogsUploader({ fileId, hasLogs }: Props) {
     setBusy(true);
     setMessage("Resetting existing logs…");
     try {
-      const res = await fetch(`/api/files/${fileId}/logs`, {
+      const res = await fetch(withBasePath(`/api/files/${fileId}/logs`), {
         method: "DELETE",
         credentials: "include",
       });

@@ -2,6 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { requireSessionUser } from "@/server/auth/session";
 import UserMenu from "@/features/auth/components/UserMenu";
+import { withBasePath } from "@/lib/basePath";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireSessionUser();
@@ -11,7 +12,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <aside className="na-sidebar">
         <Link href="/app" className="flex items-center gap-3 rounded-xl p-2 text-slate-50 transition hover:bg-white/10">
           <Image
-            src="/logo.png"
+            src={withBasePath("/logo.png")}
             alt="Nepal Airlines logo"
             width={190}
             height={46}
@@ -44,7 +45,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <div className="na-main">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-black/5 bg-white/85 px-6 py-4 text-sm shadow-sm backdrop-blur-md">
           <div className="flex items-center gap-3">
-            <Image src="/logo.png" alt="Nepal Airlines logo" width={128} height={30} className="h-8 w-auto object-contain" />
+            <Image src={withBasePath("/logo.png")} alt="Nepal Airlines logo" width={128} height={30} className="h-8 w-auto object-contain" />
             <div className="leading-tight">
               <p className="text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-slate-500">
                 Nepal Airlines • GrSD

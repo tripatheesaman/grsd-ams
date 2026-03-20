@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { prisma } from "@/server/db/prisma";
 import type { SessionUser } from "@/server/types";
+import { basePath } from "@/lib/basePath";
 
 const SESSION_COOKIE = "nac_session";
 const SECRET = (() => {
@@ -67,11 +68,12 @@ export async function loginWithUsername(username: string, password: string) {
   const token = encode({ uid, sig });
 
   const jar = await cookies();
+  const cookiePath = basePath || "/";
   jar.set(SESSION_COOKIE, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
-    path: "/",
+    path: cookiePath,
     maxAge: 60 * 60 * 24 * 7,
   });
 
@@ -80,7 +82,14 @@ export async function loginWithUsername(username: string, password: string) {
 
 export async function logout() {
   const jar = await cookies();
-  jar.delete(SESSION_COOKIE);
+  const cookiePath = basePath || "/";
+  jar.set(SESSION_COOKIE, "", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: cookiePath,
+    maxAge: 0,
+  });
 }
 
 export async function getSessionUser(): Promise<SessionUser | null> {

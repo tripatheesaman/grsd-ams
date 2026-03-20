@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { withBasePath } from "@/lib/basePath";
 
 export default function ExtensionInstaller() {
   const [bookmarklet, setBookmarklet] = useState<string | null>(null);
@@ -8,7 +9,7 @@ export default function ExtensionInstaller() {
   const bookmarkName = "GrSD-AMS";
 
   useEffect(() => {
-    fetch("/api/extension/bookmarklet")
+    fetch(withBasePath("/api/extension/bookmarklet"))
       .then((r) => r.json())
       .then((d) => setBookmarklet(typeof d?.bookmarklet === "string" ? d.bookmarklet : null))
       .catch(() => setBookmarklet(null));

@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { withBasePath } from "@/lib/basePath";
 
 export default function ChangePasswordForm() {
   const [message, setMessage] = useState<string | null>(null);
@@ -18,7 +19,7 @@ export default function ChangePasswordForm() {
       confirmPassword: f.get("confirmPassword"),
     };
 
-    const res = await fetch("/api/auth/change-password", {
+    const res = await fetch(withBasePath("/api/auth/change-password"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),

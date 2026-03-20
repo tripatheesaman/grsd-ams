@@ -6,6 +6,7 @@ import { prisma } from "@/server/db/prisma";
 import { mutationOriginError } from "@/server/security/origin";
 import { writeUploadNamed, absoluteFromMedia, processedOutputFor } from "@/server/storage/files";
 import { processAttendance } from "@/server/imports/attendance";
+import { STAGING_ROOT } from "@/server/paths";
 
 type Period = { year: number; month: number };
 
@@ -31,7 +32,7 @@ export async function POST(req: Request) {
   const body: CommitBody = (bodyUnknown && typeof bodyUnknown === "object" ? (bodyUnknown as CommitBody) : {}) satisfies CommitBody;
   const period = parsePeriod(body);
 
-  const stageDir = path.join(process.cwd(), "media", "staging");
+  const stageDir = STAGING_ROOT;
   const stagedAttendancePath = path.join(stageDir, `stage_${user.id}_attendance.xlsx`);
 
   try {

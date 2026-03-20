@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { withBasePath } from "@/lib/basePath";
 
 type Props = {
   firstName: string;
@@ -30,7 +31,7 @@ export default function UserMenu({ firstName, lastName, username }: Props) {
 
   async function onLogout() {
     setLoading(true);
-    await fetch("/api/auth/logout", { method: "POST" });
+    await fetch(withBasePath("/api/auth/logout"), { method: "POST" });
     router.push("/login");
     router.refresh();
   }

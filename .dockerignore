@@ -12,3 +12,10 @@ media/processed/*
 Dockerfile*
 docker-compose*.yml
 
+node_modules
+.git
+.next/cache
+media
+logs
+.env*
+

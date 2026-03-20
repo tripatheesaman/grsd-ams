@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { withBasePath } from "@/lib/basePath";
 
 export default function UserDeleteButton({ id, disabled }: { id: string; disabled?: boolean }) {
   const router = useRouter();
@@ -8,7 +9,7 @@ export default function UserDeleteButton({ id, disabled }: { id: string; disable
   async function onDelete() {
     if (disabled) return;
     if (!confirm("Delete this user?")) return;
-    const res = await fetch(`/api/users/${id}`, { method: "DELETE", credentials: "include" });
+    const res = await fetch(withBasePath(`/api/users/${id}`), { method: "DELETE", credentials: "include" });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       alert(data?.error || "Failed to delete user.");

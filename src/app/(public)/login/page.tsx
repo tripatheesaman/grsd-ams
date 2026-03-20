@@ -3,6 +3,7 @@
 import { FormEvent, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { withBasePath } from "@/lib/basePath";
 
 export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
@@ -16,7 +17,7 @@ export default function LoginPage() {
     setLoading(true);
 
     const form = new FormData(e.currentTarget);
-    const res = await fetch("/api/auth/login", {
+    const res = await fetch(withBasePath("/api/auth/login"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -40,7 +41,7 @@ export default function LoginPage() {
     <main className="na-auth-bg">
       <div className="na-auth-card">
         <div className="flex items-center justify-center">
-          <Image src="/logo.png" alt="Nepal Airlines logo" width={280} height={90} priority className="h-auto w-64 object-contain" />
+          <Image src={withBasePath("/logo.png")} alt="Nepal Airlines logo" width={280} height={90} priority className="h-auto w-64 object-contain" />
         </div>
         <form onSubmit={onSubmit} className="mt-8 space-y-5">
           <div>

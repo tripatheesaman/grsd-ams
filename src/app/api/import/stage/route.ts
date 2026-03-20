@@ -3,6 +3,7 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import { requireApiUser } from "@/server/auth/session";
 import { mutationOriginError } from "@/server/security/origin";
+import { STAGING_ROOT } from "@/server/paths";
 import * as XLSX from "xlsx";
 
 type ExtensionRow = Record<string, unknown>;
@@ -220,7 +221,7 @@ export async function POST(req: Request) {
 
   const buffer = tablesToWorkbookBuffer(tables);
 
-  const stageDir = path.join(process.cwd(), "media", "staging");
+  const stageDir = STAGING_ROOT;
   await fs.mkdir(stageDir, { recursive: true });
 
   const key = importType === "logs" ? `logs_${period!.year}_${String(period!.month).padStart(2, "0")}` : "attendance";

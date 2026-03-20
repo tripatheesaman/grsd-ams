@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
+import { withBasePath } from "@/lib/basePath";
 
 type Department = { id: string; name: string };
 
@@ -31,7 +32,7 @@ export default function SectionForm({ departments, initial }: { departments: Dep
       isActive: f.get("isActive") === "on",
     };
 
-    const url = initial?.id ? `/api/sections/${initial.id}` : "/api/sections";
+    const url = initial?.id ? withBasePath(`/api/sections/${initial.id}`) : withBasePath("/api/sections");
     const method = initial?.id ? "PUT" : "POST";
 
     const res = await fetch(url, {

@@ -2,6 +2,7 @@
 
 import { FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { withBasePath } from "@/lib/basePath";
 
 type SectionOption = { id: string; name: string };
 
@@ -282,7 +283,7 @@ export default function BulkStaffSync({
       return;
     }
 
-    const res = await fetch("/api/staff/bulk", {
+    const res = await fetch(withBasePath("/api/staff/bulk"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -352,7 +353,7 @@ export default function BulkStaffSync({
         if (filterSectionId) params.set("sectionId", filterSectionId);
         if (filterEmploymentType.trim()) params.set("typeOfEmployment", normalizeTypeForEdit(filterEmploymentType.trim()));
         if (filterStatus) params.set("status", filterStatus);
-        const res = await fetch(`/api/staff?${params.toString()}`, { signal: controller.signal });
+        const res = await fetch(withBasePath(`/api/staff?${params.toString()}`), { signal: controller.signal });
         const data = (await res.json().catch(() => ({}))) as { error?: string; staff?: ApiStaff[] };
         if (!res.ok) {
           setSearchError(data.error ?? "Search failed");
@@ -429,7 +430,7 @@ export default function BulkStaffSync({
       return;
     }
 
-    const res = await fetch("/api/staff/bulk", {
+      const res = await fetch(withBasePath("/api/staff/bulk"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

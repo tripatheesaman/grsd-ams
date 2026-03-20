@@ -1,13 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { withBasePath } from "@/lib/basePath";
 
 export default function SectionDeleteButton({ id }: { id: string }) {
   const router = useRouter();
 
   async function onDelete() {
     if (!confirm("Delete this section?")) return;
-    const res = await fetch(`/api/sections/${id}`, { method: "DELETE" });
+    const res = await fetch(withBasePath(`/api/sections/${id}`), { method: "DELETE" });
     if (!res.ok) {
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       alert(data.error ?? "Delete failed");

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { withBasePath } from "@/lib/basePath";
 
 type Props = { fileId: string };
 type TabKey = "preview" | "leave";
@@ -28,8 +29,8 @@ export default function FileDetailClient({ fileId, initialTab = "preview" }: Pro
 
   useEffect(() => {
     const url = tab === "preview"
-      ? `/api/files/${fileId}/preview?q=${encodeURIComponent(query)}`
-      : `/api/files/${fileId}/leave-details?q=${encodeURIComponent(query)}`;
+      ? withBasePath(`/api/files/${fileId}/preview?q=${encodeURIComponent(query)}`)
+      : withBasePath(`/api/files/${fileId}/leave-details?q=${encodeURIComponent(query)}`);
 
     fetch(url)
       .then((r) => r.json())

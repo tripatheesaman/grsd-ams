@@ -5,9 +5,13 @@ import path from "node:path";
 export async function GET(req: Request) {
   try {
     const origin = new URL(req.url).origin;
+    const appBasePath = (process.env.NEXT_PUBLIC_BASE_PATH || "").replace(/\/$/, "");
     const bookmarkletPath = path.join(process.cwd(), "public", "extension", "bookmarklet.js");
     const raw = (await fs.readFile(bookmarkletPath, "utf-8")).trim();
-    const code = raw.replace(/__GRSD_APP_ORIGIN__/g, origin);
+    const code = raw
+      .replace(/__GRSD_APP_ORIGIN__/g, origin)
+      .replace(/__GRSD_BASE_PATH__/g, appBasePath)
+      .replace('var bridgeUrl=base+"/app/import-bridge";', `var bridgeUrl=base+"${appBasePath}"+"/app/import-bridge";`);
     if (!code) {
       return NextResponse.json({ error: "Bookmarklet code is empty" }, { status: 500 });
     }

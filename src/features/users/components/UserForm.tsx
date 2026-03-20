@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { withBasePath } from "@/lib/basePath";
 
 type Department = { id: number; name: string };
 type InitialValues = {
@@ -48,7 +49,7 @@ export default function UserForm({
       delete (payload as { password?: string }).password;
     }
 
-    const endpoint = mode === "create" ? "/api/users" : `/api/users/${userId}`;
+    const endpoint = mode === "create" ? withBasePath("/api/users") : withBasePath(`/api/users/${userId}`);
     const method = mode === "create" ? "POST" : "PUT";
     const res = await fetch(endpoint, {
       method,

@@ -1,13 +1,14 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { withBasePath } from "@/lib/basePath";
 
 export const metadata: Metadata = {
   title: "NAC Admin Dashboard",
   description: "NAC Admin Dashboard",
   icons: {
-    icon: "/favicon.png",
-    shortcut: "/favicon.png",
-    apple: "/favicon.png",
+    icon: withBasePath("/favicon.png"),
+    shortcut: withBasePath("/favicon.png"),
+    apple: withBasePath("/favicon.png"),
   },
 };
 
