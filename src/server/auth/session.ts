@@ -7,16 +7,13 @@ import type { SessionUser } from "@/server/types";
 import { basePath } from "@/lib/basePath";
 
 const SESSION_COOKIE = "nac_session";
-const SECRET = (() => {
-  const value = process.env.AUTH_SECRET;
-  if (!value) {
-    if (process.env.NODE_ENV === "production") {
-      throw new Error("AUTH_SECRET must be set in production");
-    }
-    throw new Error("AUTH_SECRET must be set");
-  }
-  return value;
-})();
+const realAuthSecret = process.env.AUTH_SECRET;
+const isNextBuildPhase = (process.env.NEXT_PHASE ?? "").toLowerCase().includes("build");
+
+// During `next build` inside Docker, secrets are typically not present.
+// Next may import server modules during build-time collection, so we must not throw here.
+// We still require the real secret when the auth logic is executed outside build phase.
+const SECRET = realAuthSecret ?? "__BUILD_TIME_AUTH_SECRET__";
 
 type SessionPayload = {
   uid: string;
@@ -24,6 +21,9 @@ type SessionPayload = {
 };
 
 function sign(uid: string) {
+  if (!realAuthSecret && !isNextBuildPhase) {
+    throw new Error("AUTH_SECRET must be set");
+  }
   return createHmac("sha256", SECRET).update(uid).digest("hex");
 }
 

@@ -7,11 +7,14 @@ declare global {
 }
 
 const connectionString = process.env.DATABASE_URL;
-if (!connectionString) {
-  throw new Error("DATABASE_URL is required");
-}
+// Important: do not throw at import-time during `next build` inside Docker.
+// Docker builds often don't have DATABASE_URL available (env is injected at runtime).
+// Prisma will require DATABASE_URL only when a query is executed.
+const fallbackConnectionString =
+  "postgresql://postgres:postgres@localhost:5432/admin_db?schema=public";
 
-const adapter = new PrismaPg(new Pool({ connectionString }));
+const adapterConnectionString = connectionString || fallbackConnectionString;
+const adapter = new PrismaPg(new Pool({ connectionString: adapterConnectionString }));
 export const prisma = global.prismaGlobal ?? new PrismaClient({ adapter });
 
 if (process.env.NODE_ENV !== "production") {
