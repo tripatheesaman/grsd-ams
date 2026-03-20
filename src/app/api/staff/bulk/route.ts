@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireApiUser } from "@/server/auth";
-import { prisma } from "@/server/prisma";
-import { staffScopedWhere } from "@/server/permissions";
-import { mutationOriginError } from "@/server/security";
+import { requireApiUser } from "@/server/auth/session";
+import { prisma } from "@/server/db/prisma";
+import { staffScopedWhere } from "@/server/authorization/permissions";
+import { mutationOriginError } from "@/server/security/origin";
 
 const weeklyOffSchema = z.enum(["sun", "mon", "tue", "wed", "thurs", "fri", "sat"]);
 const employmentSchema = z.enum(["permanent", "contract", "monthly wages"]);

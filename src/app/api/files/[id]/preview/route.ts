@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { requireApiUser } from "@/server/auth";
-import { prisma } from "@/server/prisma";
-import { departmentScopedWhere } from "@/server/permissions";
-import { absoluteFromMedia } from "@/server/files";
-import { previewAttendance } from "@/server/attendance";
+import { requireApiUser } from "@/server/auth/session";
+import { prisma } from "@/server/db/prisma";
+import { departmentScopedWhere } from "@/server/authorization/permissions";
+import { absoluteFromMedia } from "@/server/storage/files";
+import { previewAttendance } from "@/server/imports/attendance";
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await requireApiUser();

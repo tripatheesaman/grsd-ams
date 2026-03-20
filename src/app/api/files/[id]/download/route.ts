@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { requireApiUser } from "@/server/auth";
-import { prisma } from "@/server/prisma";
-import { departmentScopedWhere } from "@/server/permissions";
-import { absoluteFromMedia } from "@/server/files";
+import { requireApiUser } from "@/server/auth/session";
+import { prisma } from "@/server/db/prisma";
+import { departmentScopedWhere } from "@/server/authorization/permissions";
+import { absoluteFromMedia } from "@/server/storage/files";
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await requireApiUser();

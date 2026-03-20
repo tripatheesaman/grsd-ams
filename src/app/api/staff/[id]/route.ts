@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireApiUser } from "@/server/auth";
-import { prisma } from "@/server/prisma";
-import { staffScopedWhere } from "@/server/permissions";
-import { jsonWithNumber } from "@/server/serializers";
-import { mutationOriginError } from "@/server/security";
+import { requireApiUser } from "@/server/auth/session";
+import { prisma } from "@/server/db/prisma";
+import { staffScopedWhere } from "@/server/authorization/permissions";
+import { jsonWithNumber } from "@/server/serialization/serializers";
+import { mutationOriginError } from "@/server/security/origin";
 
 const updateSchema = z.object({
   staffid: z.string().min(1),

@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import * as XLSX from "xlsx";
-import { requireApiUser } from "@/server/auth";
-import { prisma } from "@/server/prisma";
-import { staffScopedWhere } from "@/server/permissions";
+import { requireApiUser } from "@/server/auth/session";
+import { prisma } from "@/server/db/prisma";
+import { staffScopedWhere } from "@/server/authorization/permissions";
 
 export async function GET(req: Request) {
   const user = await requireApiUser();

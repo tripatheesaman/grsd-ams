@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { requireApiUser } from "@/server/auth";
-import { prisma } from "@/server/prisma";
-import { writeUpload, writeUploadNamed } from "@/server/files";
-import { expectedOriginForRequest, mutationOriginError } from "@/server/security";
+import { requireApiUser } from "@/server/auth/session";
+import { prisma } from "@/server/db/prisma";
+import { writeUpload, writeUploadNamed } from "@/server/storage/files";
+import { expectedOriginForRequest, mutationOriginError } from "@/server/security/origin";
 import * as XLSX from "xlsx";
 
 type ExtensionRow = Record<string, unknown>;

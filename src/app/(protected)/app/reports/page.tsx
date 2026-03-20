@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { requireSessionUser } from "@/server/auth";
-import { departmentScopedWhere } from "@/server/permissions";
-import { prisma } from "@/server/prisma";
+import { requireSessionUser } from "@/server/auth/session";
+import { departmentScopedWhere } from "@/server/authorization/permissions";
+import { prisma } from "@/server/db/prisma";
 
 type PageProps = {
   searchParams: Promise<{

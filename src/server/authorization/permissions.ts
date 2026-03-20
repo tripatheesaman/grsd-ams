@@ -30,3 +30,4 @@ export function sectionScopedWhere(user: SessionUser): Prisma.SectionWhereInput 
   }
   return { departmentId: user.departmentId };
 }
+

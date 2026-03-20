@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import bcrypt from "bcryptjs";
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { prisma } from "@/server/prisma";
+import { prisma } from "@/server/db/prisma";
 import type { SessionUser } from "@/server/types";
 
 const SESSION_COOKIE = "nac_session";
@@ -129,3 +129,4 @@ export async function requireApiUser() {
   const user = await getSessionUser();
   return user;
 }
+

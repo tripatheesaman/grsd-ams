@@ -1,8 +1,8 @@
 import Link from "next/link";
 import SectionDeleteButton from "@/features/sections/components/SectionDeleteButton";
-import { requireSessionUser } from "@/server/auth";
-import { prisma } from "@/server/prisma";
-import { sectionScopedWhere } from "@/server/permissions";
+import { requireSessionUser } from "@/server/auth/session";
+import { prisma } from "@/server/db/prisma";
+import { sectionScopedWhere } from "@/server/authorization/permissions";
 
 export default async function SectionsPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
   const user = await requireSessionUser();

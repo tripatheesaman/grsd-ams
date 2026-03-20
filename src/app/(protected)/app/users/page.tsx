@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { requireSessionUser } from "@/server/auth";
-import { prisma } from "@/server/prisma";
+import { requireSessionUser } from "@/server/auth/session";
+import { prisma } from "@/server/db/prisma";
 import UserDeleteButton from "@/features/users/components/UserDeleteButton";
 
 export default async function UsersPage() {

@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { requireSessionUser } from "@/server/auth";
-import { prisma } from "@/server/prisma";
-import { staffScopedWhere } from "@/server/permissions";
+import { requireSessionUser } from "@/server/auth/session";
+import { prisma } from "@/server/db/prisma";
+import { staffScopedWhere } from "@/server/authorization/permissions";
 import StaffDeleteButton from "@/features/staff/components/StaffDeleteButton";
 import BulkStaffSync from "@/features/staff/components/BulkStaffSync";
 

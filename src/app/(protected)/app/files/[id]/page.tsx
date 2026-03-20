@@ -1,9 +1,9 @@
 import { notFound } from "next/navigation";
 import FileActions from "@/features/files/components/FileActions";
 import FileDetailClient from "@/features/files/components/FileDetailClient";
-import { requireSessionUser } from "@/server/auth";
-import { departmentScopedWhere } from "@/server/permissions";
-import { prisma } from "@/server/prisma";
+import { requireSessionUser } from "@/server/auth/session";
+import { departmentScopedWhere } from "@/server/authorization/permissions";
+import { prisma } from "@/server/db/prisma";
 
 export default async function FileDetailPage({
   params,

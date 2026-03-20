@@ -5,3 +5,4 @@ export function jsonSafe(input: unknown) {
 }
 
 export const jsonWithNumber = jsonSafe;
+

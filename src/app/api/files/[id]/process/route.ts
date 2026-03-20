@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { requireApiUser } from "@/server/auth";
-import { prisma } from "@/server/prisma";
-import { departmentScopedWhere } from "@/server/permissions";
-import { absoluteFromMedia, processedOutputFor, renameUploadedFile } from "@/server/files";
-import { processAttendance } from "@/server/attendance";
-import { mutationOriginError } from "@/server/security";
+import { requireApiUser } from "@/server/auth/session";
+import { prisma } from "@/server/db/prisma";
+import { departmentScopedWhere } from "@/server/authorization/permissions";
+import { absoluteFromMedia, processedOutputFor, renameUploadedFile } from "@/server/storage/files";
+import { processAttendance } from "@/server/imports/attendance";
+import { mutationOriginError } from "@/server/security/origin";
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const originError = mutationOriginError(req);

@@ -1,8 +1,8 @@
 import { notFound } from "next/navigation";
 import SectionForm from "@/features/sections/components/SectionForm";
-import { requireSessionUser } from "@/server/auth";
-import { prisma } from "@/server/prisma";
-import { sectionScopedWhere } from "@/server/permissions";
+import { requireSessionUser } from "@/server/auth/session";
+import { prisma } from "@/server/db/prisma";
+import { sectionScopedWhere } from "@/server/authorization/permissions";
 
 export default async function EditSectionPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireSessionUser();

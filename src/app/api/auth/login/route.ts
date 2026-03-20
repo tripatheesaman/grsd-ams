@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { loginWithUsername } from "@/server/auth";
-import { mutationOriginError } from "@/server/security";
+import { loginWithUsername } from "@/server/auth/session";
+import { mutationOriginError } from "@/server/security/origin";
 
 const schema = z.object({
   username: z.string().min(1),

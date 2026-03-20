@@ -3,7 +3,7 @@ import path from "node:path";
 import JSZip from "jszip";
 import ExcelJS from "exceljs";
 import * as XLSX from "xlsx";
-import { prisma } from "@/server/prisma";
+import { prisma } from "@/server/db/prisma";
 
 type AttendanceRow = {
   Employee_ID: string;
@@ -236,15 +236,18 @@ function processMatrixAttendance(inputPath: string): AttendanceRow[] {
   };
 
   const snCol = findHeaderIndex(["sn", "sn.", "s.n."]) >= 0 ? findHeaderIndex(["sn", "sn.", "s.n."]) : 0;
-  const empIdCol = findHeaderIndex(["emp id", "empid", "employee id", "emp no", "emp no."]) >= 0
-    ? findHeaderIndex(["emp id", "empid", "employee id", "emp no", "emp no."])
-    : 1;
-  const nameCol = findHeaderIndex(["name", "employee name", "emp name"]) >= 0
-    ? findHeaderIndex(["name", "employee name", "emp name"])
-    : 2;
-  const postCol = findHeaderIndex(["post", "designation", "desig"]) >= 0
-    ? findHeaderIndex(["post", "designation", "desig"])
-    : 3;
+  const empIdCol =
+    findHeaderIndex(["emp id", "empid", "employee id", "emp no", "emp no."]) >= 0
+      ? findHeaderIndex(["emp id", "empid", "employee id", "emp no", "emp no."])
+      : 1;
+  const nameCol =
+    findHeaderIndex(["name", "employee name", "emp name"]) >= 0
+      ? findHeaderIndex(["name", "employee name", "emp name"])
+      : 2;
+  const postCol =
+    findHeaderIndex(["post", "designation", "desig"]) >= 0
+      ? findHeaderIndex(["post", "designation", "desig"])
+      : 3;
   const timeCol = findHeaderIndex(["time"]) >= 0 ? findHeaderIndex(["time"]) : 4;
 
   const excludeKeywords = ["annual", "leave", "sick", "other", "casual", "substitute", "absent", "opening"];
@@ -550,16 +553,6 @@ function extractPeriodFromPath(filePath: string): { year: number; month: number 
 
 function normalizeHeaderKey(value: unknown) {
   return String(value ?? "").toLowerCase().replace(/[\s._-]+/g, "");
-}
-
-function valueByHeader(record: Record<string, unknown>, keys: string[]): unknown {
-  for (const [k, v] of Object.entries(record)) {
-    const nk = normalizeHeaderKey(k);
-    if (keys.includes(nk)) {
-      return v;
-    }
-  }
-  return "";
 }
 
 async function loadLogsForAttendance(inputPath: string) {
@@ -908,9 +901,10 @@ export async function processAttendance(inputPath: string, outputPath: string) {
 
 export async function previewAttendance(inputPath: string) {
   const rows = await loadAttendance(inputPath);
-  const columns = rows.length > 0
-    ? Object.keys(rows[0])
-    : ["Employee_ID", "Employee_Name", "Designation", "Date", "Day_Name", "InTime", "OutTime", "Status", "WorkedHours"];
+  const columns =
+    rows.length > 0
+      ? Object.keys(rows[0])
+      : ["Employee_ID", "Employee_Name", "Designation", "Date", "Day_Name", "InTime", "OutTime", "Status", "WorkedHours"];
   return { columns, rows };
 }
 
@@ -1015,17 +1009,18 @@ export async function segregationReport(inputPath: string, outputPath: string, d
 }
 
 async function getTemplateStaff(staffType: "detailed" | "monthly", departmentId?: string): Promise<StaffMeta[]> {
-  const where = staffType === "detailed"
-    ? {
-      typeOfEmployment: { in: ["permanent", "contract"] },
-      ...(departmentId ? { departmentId: Number(departmentId) } : {}),
-      sectionId: { not: null },
-    }
-    : {
-      typeOfEmployment: "monthly wages",
-      ...(departmentId ? { departmentId: Number(departmentId) } : {}),
-      sectionId: { not: null },
-    };
+  const where =
+    staffType === "detailed"
+      ? {
+          typeOfEmployment: { in: ["permanent", "contract"] },
+          ...(departmentId ? { departmentId: Number(departmentId) } : {}),
+          sectionId: { not: null },
+        }
+      : {
+          typeOfEmployment: "monthly wages",
+          ...(departmentId ? { departmentId: Number(departmentId) } : {}),
+          sectionId: { not: null },
+        };
   const rows = await prisma.staffDetail.findMany({
     where,
     orderBy: [{ priority: "asc" }, { staffid: "asc" }],
@@ -1042,7 +1037,13 @@ async function getTemplateStaff(staffType: "detailed" | "monthly", departmentId?
   return rows;
 }
 
-async function fillTemplate(inputPath: string, outputPath: string, templatePath: string, staffType: "detailed" | "monthly", departmentId?: string) {
+async function fillTemplate(
+  inputPath: string,
+  outputPath: string,
+  templatePath: string,
+  staffType: "detailed" | "monthly",
+  departmentId?: string,
+) {
   const attendance = await loadAttendance(inputPath);
   const staffRows = await getTemplateStaff(staffType, departmentId);
 
@@ -1129,3 +1130,4 @@ export async function monthlyReport(inputPath: string, outputPath: string, templ
   await fillTemplate(inputPath, outputPath, templatePath, "monthly", departmentId);
   return { success: true, output: outputPath };
 }
+

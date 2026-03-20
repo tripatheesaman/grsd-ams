@@ -1,6 +1,6 @@
 import ChangePasswordForm from "@/features/auth/components/ChangePasswordForm";
-import { requireSessionUser } from "@/server/auth";
-import { prisma } from "@/server/prisma";
+import { requireSessionUser } from "@/server/auth/session";
+import { prisma } from "@/server/db/prisma";
 import Link from "next/link";
 import LogoutButton from "@/features/auth/components/LogoutButton";
 

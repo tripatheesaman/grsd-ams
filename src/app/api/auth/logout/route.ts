@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { logout } from "@/server/auth";
-import { mutationOriginError } from "@/server/security";
+import { logout } from "@/server/auth/session";
+import { mutationOriginError } from "@/server/security/origin";
 
 export async function POST(req: Request) {
   const originError = mutationOriginError(req);

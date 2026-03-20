@@ -1,7 +1,7 @@
 import FileActions from "@/features/files/components/FileActions";
-import { requireSessionUser } from "@/server/auth";
-import { departmentScopedWhere } from "@/server/permissions";
-import { prisma } from "@/server/prisma";
+import { requireSessionUser } from "@/server/auth/session";
+import { departmentScopedWhere } from "@/server/authorization/permissions";
+import { prisma } from "@/server/db/prisma";
 import Link from "next/link";
 
 export default async function FilesPage() {

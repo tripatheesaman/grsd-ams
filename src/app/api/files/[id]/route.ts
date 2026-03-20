@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { requireApiUser } from "@/server/auth";
-import { prisma } from "@/server/prisma";
-import { departmentScopedWhere } from "@/server/permissions";
-import { absoluteFromMedia } from "@/server/files";
+import { requireApiUser } from "@/server/auth/session";
+import { prisma } from "@/server/db/prisma";
+import { departmentScopedWhere } from "@/server/authorization/permissions";
+import { absoluteFromMedia } from "@/server/storage/files";
 import { promises as fs } from "node:fs";
-import { jsonWithNumber } from "@/server/serializers";
-import { mutationOriginError } from "@/server/security";
+import { jsonWithNumber } from "@/server/serialization/serializers";
+import { mutationOriginError } from "@/server/security/origin";
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await requireApiUser();

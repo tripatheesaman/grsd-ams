@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import path from "node:path";
 import fs from "node:fs/promises";
-import { requireApiUser } from "@/server/auth";
-import { prisma } from "@/server/prisma";
-import { mutationOriginError } from "@/server/security";
-import { writeUploadNamed, absoluteFromMedia, processedOutputFor } from "@/server/files";
-import { processAttendance } from "@/server/attendance";
+import { requireApiUser } from "@/server/auth/session";
+import { prisma } from "@/server/db/prisma";
+import { mutationOriginError } from "@/server/security/origin";
+import { writeUploadNamed, absoluteFromMedia, processedOutputFor } from "@/server/storage/files";
+import { processAttendance } from "@/server/imports/attendance";
 
 type Period = { year: number; month: number };
 

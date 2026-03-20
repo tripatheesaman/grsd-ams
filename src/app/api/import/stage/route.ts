@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import path from "node:path";
 import fs from "node:fs/promises";
-import { requireApiUser } from "@/server/auth";
-import { mutationOriginError } from "@/server/security";
+import { requireApiUser } from "@/server/auth/session";
+import { mutationOriginError } from "@/server/security/origin";
 import * as XLSX from "xlsx";
 
 type ExtensionRow = Record<string, unknown>;

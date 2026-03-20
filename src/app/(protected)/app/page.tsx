@@ -1,6 +1,6 @@
-import { requireSessionUser } from "@/server/auth";
-import { prisma } from "@/server/prisma";
-import { departmentScopedWhere } from "@/server/permissions";
+import { requireSessionUser } from "@/server/auth/session";
+import { prisma } from "@/server/db/prisma";
+import { departmentScopedWhere } from "@/server/authorization/permissions";
 import UploadForm from "@/features/files/components/UploadForm";
 import FileActions from "@/features/files/components/FileActions";
 import Link from "next/link";

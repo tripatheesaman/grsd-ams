@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { requireApiUser } from "@/server/auth";
-import { prisma } from "@/server/prisma";
-import { departmentScopedWhere } from "@/server/permissions";
-import { jsonWithNumber } from "@/server/serializers";
-import { mutationOriginError } from "@/server/security";
+import { requireApiUser } from "@/server/auth/session";
+import { prisma } from "@/server/db/prisma";
+import { departmentScopedWhere } from "@/server/authorization/permissions";
+import { jsonWithNumber } from "@/server/serialization/serializers";
+import { mutationOriginError } from "@/server/security/origin";
 
 export async function GET() {
   const user = await requireApiUser();

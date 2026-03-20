@@ -1,6 +1,6 @@
 import SectionForm from "@/features/sections/components/SectionForm";
-import { requireSessionUser } from "@/server/auth";
-import { prisma } from "@/server/prisma";
+import { requireSessionUser } from "@/server/auth/session";
+import { prisma } from "@/server/db/prisma";
 
 export default async function NewSectionPage() {
   const user = await requireSessionUser();

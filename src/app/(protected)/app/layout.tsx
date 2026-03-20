@@ -1,6 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
-import { requireSessionUser } from "@/server/auth";
+import { requireSessionUser } from "@/server/auth/session";
 import UserMenu from "@/features/auth/components/UserMenu";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {

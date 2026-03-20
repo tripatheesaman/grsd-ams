@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { createPasswordHash, requireApiUser, verifyPassword } from "@/server/auth";
-import { prisma } from "@/server/prisma";
-import { mutationOriginError } from "@/server/security";
+import { createPasswordHash, requireApiUser, verifyPassword } from "@/server/auth/session";
+import { prisma } from "@/server/db/prisma";
+import { mutationOriginError } from "@/server/security/origin";
 
 const schema = z
   .object({
