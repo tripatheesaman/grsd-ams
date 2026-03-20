@@ -28,6 +28,7 @@ services:
       NODE_ENV: production
       APP_ORIGIN: http://localhost:3000
       TEST_BUILD: ${TEST_BUILD:-0}
+      PORT: 3000
       DATABASE_URL: postgresql://${DATABASE_USER}:${DATABASE_PASSWORD}@db:5432/${DATABASE_NAME}?schema=public
     depends_on:
       db:
@@ -41,7 +42,7 @@ services:
       - "127.0.0.1:3000:3000"
     networks:
       - grsd_ams_network
-    command: sh -c 'if [ "$TEST_BUILD" = "1" ]; then npm run build; fi && npm run start'
+    command: sh -c 'if [ "$TEST_BUILD" = "1" ]; then npm run build; fi && node .next/standalone/server.js'
     restart: unless-stopped
 
 networks:
