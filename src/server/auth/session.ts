@@ -20,6 +20,8 @@ type SessionPayload = {
   sig: string;
 };
 
+type SessionCookieValue = string;
+
 function sign(uid: string) {
   if (!realAuthSecret && !isNextBuildPhase) {
     throw new Error("AUTH_SECRET must be set");
@@ -67,29 +69,36 @@ export async function loginWithUsername(username: string, password: string) {
   const sig = sign(uid);
   const token = encode({ uid, sig });
 
-  const jar = await cookies();
-  const cookiePath = basePath || "/";
-  jar.set(SESSION_COOKIE, token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: cookiePath,
-    maxAge: 60 * 60 * 24 * 7,
-  });
+  await writeSessionCookie(token);
 
   return user;
 }
 
 export async function logout() {
+  await writeSessionCookie("", {
+    maxAge: 0,
+  });
+}
+
+async function writeSessionCookie(token: SessionCookieValue, overrides?: { maxAge?: number }) {
   const jar = await cookies();
   const cookiePath = basePath || "/";
-  jar.set(SESSION_COOKIE, "", {
+  const cookieBase = {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
-    path: cookiePath,
-    maxAge: 0,
-  });
+    maxAge: overrides?.maxAge ?? 60 * 60 * 24 * 7,
+  } as const;
+
+  // Keep the app-scoped cookie and root cookie aligned to avoid stale duplicates
+  // from older deployments that used a different path.
+  const paths = cookiePath === "/" ? ["/"] : [cookiePath, "/"];
+  for (const path of paths) {
+    jar.set(SESSION_COOKIE, token, {
+      ...cookieBase,
+      path,
+    });
+  }
 }
 
 export async function getSessionUser(): Promise<SessionUser | null> {

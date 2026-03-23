@@ -58,7 +58,7 @@ export default function UserMenu({ firstName, lastName, username }: Props) {
       {open ? (
         <div className="absolute right-0 z-20 mt-2 w-44 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
           <Link
-            href="/app/profile"
+            href={withBasePath("/app/profile")}
             className="block rounded-lg px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 hover:text-slate-900"
             onClick={() => setOpen(false)}
           >

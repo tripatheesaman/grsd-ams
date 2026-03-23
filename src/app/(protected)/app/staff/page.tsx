@@ -4,6 +4,7 @@ import { prisma } from "@/server/db/prisma";
 import { staffScopedWhere } from "@/server/authorization/permissions";
 import StaffDeleteButton from "@/features/staff/components/StaffDeleteButton";
 import BulkStaffSync from "@/features/staff/components/BulkStaffSync";
+import { withBasePath } from "@/lib/basePath";
 
 export default async function StaffPage({
   searchParams,
@@ -67,7 +68,7 @@ export default async function StaffPage({
     ...(designation ? { designation } : {}),
     ...(sectionId ? { sectionId } : {}),
   }).toString()}`;
-  const allExportHref = "/api/staff/export?scope=all";
+  const allExportHref = withBasePath("/api/staff/export?scope=all");
 
   return (
     <section className="space-y-3">
@@ -80,12 +81,12 @@ export default async function StaffPage({
           <Link href={editBulkHref} className="nac-btn-secondary px-3 py-2 text-xs">
             Bulk Edit Staff
           </Link>
-          <Link href={allExportHref} className="nac-btn-secondary px-3 py-2 text-xs">
+          <a href={allExportHref} className="nac-btn-secondary px-3 py-2 text-xs">
             Export All (Excel)
-          </Link>
-          <Link href={filteredExportHref} className="nac-btn-secondary px-3 py-2 text-xs">
+          </a>
+          <a href={withBasePath(filteredExportHref)} className="nac-btn-secondary px-3 py-2 text-xs">
             Export Filtered (Excel)
-          </Link>
+          </a>
           <Link href="/app/staff/new" className="nac-btn-primary px-3 py-2">Add Staff</Link>
         </div>
       </div>
