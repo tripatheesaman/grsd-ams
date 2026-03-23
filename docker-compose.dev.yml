@@ -3,17 +3,17 @@ services:
     container_name: grsd-ams-db-dev
     image: postgres:15-alpine
     environment:
-      POSTGRES_DB: ${DATABASE_NAME}
-      POSTGRES_USER: ${DATABASE_USER}
-      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+      POSTGRES_DB: ${DATABASE_NAME:-admin_db}
+      POSTGRES_USER: ${DATABASE_USER:-postgres}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-Testing@123}
     volumes:
       - ./media/db-dev:/var/lib/postgresql/data
     networks:
       - grsd_ams_network
     ports:
-      - "5432:5432"
+      - "5434:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER:-postgres} -d ${DATABASE_NAME:-admin_db}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -29,7 +29,7 @@ services:
       APP_ORIGIN: http://localhost:3000
       TEST_BUILD: ${TEST_BUILD:-0}
       PORT: 3000
-      DATABASE_URL: postgresql://${DATABASE_USER}:${DATABASE_PASSWORD}@db:5432/${DATABASE_NAME}?schema=public
+      DATABASE_URL: postgresql://${DATABASE_USER:-postgres}:${DATABASE_PASSWORD:-Testing@123}@db:5432/${DATABASE_NAME:-admin_db}?schema=public
     depends_on:
       db:
         condition: service_healthy
@@ -42,7 +42,7 @@ services:
       - "127.0.0.1:3000:3000"
     networks:
       - grsd_ams_network
-    command: sh -c 'if [ "$TEST_BUILD" = "1" ]; then npm run build; fi && node .next/standalone/server.js'
+    command: sh -c 'node server.js'
     restart: unless-stopped
 
 networks:

@@ -8,7 +8,7 @@ export default function LogoutButton({ compact = false }: { compact?: boolean })
 
   async function onLogout() {
     await fetch(withBasePath("/api/auth/logout"), { method: "POST" });
-    router.push(withBasePath("/login"));
+    router.push("/login");
     router.refresh();
   }
 

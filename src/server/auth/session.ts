@@ -4,7 +4,7 @@ import bcrypt from "bcryptjs";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { prisma } from "@/server/db/prisma";
 import type { SessionUser } from "@/server/types";
-import { basePath, withBasePath } from "@/lib/basePath";
+import { basePath } from "@/lib/basePath";
 
 const SESSION_COOKIE = "nac_session";
 const realAuthSecret = process.env.AUTH_SECRET;
@@ -138,7 +138,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
 export async function requireSessionUser() {
   const user = await getSessionUser();
   if (!user) {
-    redirect(withBasePath("/login"));
+    redirect("/login");
   }
   return user;
 }

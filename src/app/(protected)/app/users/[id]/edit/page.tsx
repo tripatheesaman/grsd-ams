@@ -3,15 +3,14 @@ import { redirect } from "next/navigation";
 import { requireSessionUser } from "@/server/auth/session";
 import { prisma } from "@/server/db/prisma";
 import UserForm from "@/features/users/components/UserForm";
-import { withBasePath } from "@/lib/basePath";
 
 export default async function EditUserPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await requireSessionUser();
-  if (!session.isSuperuser) redirect(withBasePath("/app"));
+  if (!session.isSuperuser) redirect("/app");
 
   const { id } = await params;
   const user = await prisma.user.findUnique({ where: { id: Number(id) } });
-  if (!user) redirect(withBasePath("/app/users"));
+  if (!user) redirect("/app/users");
 
   const departments = await prisma.department.findMany({
     where: { isActive: true },

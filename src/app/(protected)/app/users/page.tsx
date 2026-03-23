@@ -3,12 +3,11 @@ import { redirect } from "next/navigation";
 import { requireSessionUser } from "@/server/auth/session";
 import { prisma } from "@/server/db/prisma";
 import UserDeleteButton from "@/features/users/components/UserDeleteButton";
-import { withBasePath } from "@/lib/basePath";
 
 export default async function UsersPage() {
   const session = await requireSessionUser();
   if (!session.isSuperuser) {
-    redirect(withBasePath("/app"));
+    redirect("/app");
   }
 
   const users = await prisma.user.findMany({
