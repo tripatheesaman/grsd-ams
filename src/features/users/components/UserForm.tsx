@@ -1,5 +1,6 @@
 "use client";
 
+import type { FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { withBasePath } from "@/lib/basePath";
@@ -31,7 +32,7 @@ export default function UserForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function onSubmit(formData: FormData) {
+  async function submitFormData(formData: FormData) {
     setBusy(true);
     setError(null);
     const payload = {
@@ -70,8 +71,10 @@ export default function UserForm({
   return (
     <form
       className="nac-card grid gap-3 p-4 md:grid-cols-2"
-      action={async (formData) => {
-        await onSubmit(formData);
+      onSubmit={async (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        const formData = new FormData(event.currentTarget);
+        await submitFormData(formData);
       }}
     >
       <div>
