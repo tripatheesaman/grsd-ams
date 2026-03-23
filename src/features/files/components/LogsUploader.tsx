@@ -25,11 +25,19 @@ export default function LogsUploader({ fileId, hasLogs }: Props) {
     try {
       const form = new FormData();
       form.append("file", file);
-      const res = await fetch(withBasePath(`/api/files/${fileId}/logs`), {
+      let res = await fetch(withBasePath(`/api/files/${fileId}/logs`), {
         method: "POST",
         body: form,
         credentials: "include",
       });
+      if (res.status === 404) {
+        form.append("fileId", fileId);
+        res = await fetch(withBasePath("/api/files/logs"), {
+          method: "POST",
+          body: form,
+          credentials: "include",
+        });
+      }
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
       setMessage(data?.message || "Logs imported.");
@@ -47,10 +55,16 @@ export default function LogsUploader({ fileId, hasLogs }: Props) {
     setBusy(true);
     setMessage("Resetting existing logs…");
     try {
-      const res = await fetch(withBasePath(`/api/files/${fileId}/logs`), {
+      let res = await fetch(withBasePath(`/api/files/${fileId}/logs`), {
         method: "DELETE",
         credentials: "include",
       });
+      if (res.status === 404) {
+        res = await fetch(withBasePath(`/api/files/logs?fileId=${encodeURIComponent(fileId)}`), {
+          method: "DELETE",
+          credentials: "include",
+        });
+      }
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
       setLogsPresent(false);
