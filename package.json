@@ -9,7 +9,9 @@
     "lint": "eslint",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:seed": "tsx prisma/seed.ts"
+    "prisma:seed": "tsx prisma/seed.ts",
+    "smoke:prod-routes": "node scripts/smoke-prod-routes.mjs",
+    "ci:parity": "npm run prisma:generate && npm run build && npm run smoke:prod-routes"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.4.0",

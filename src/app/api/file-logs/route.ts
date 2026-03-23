@@ -15,24 +15,49 @@ function parseFileId(value: string | null): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-export async function POST(req: Request) {
+type FileLogHandlerOptions = {
+  fileId?: number | null;
+};
+
+function logFileLogs(event: string, req: Request, details?: Record<string, unknown>) {
+  const url = new URL(req.url);
+  console.info("[file-logs]", {
+    event,
+    method: req.method,
+    path: url.pathname,
+    contentType: req.headers.get("content-type"),
+    origin: req.headers.get("origin"),
+    referer: req.headers.get("referer"),
+    userAgent: req.headers.get("user-agent"),
+    ...details,
+  });
+}
+
+export async function postFileLogs(req: Request, options?: FileLogHandlerOptions) {
+  logFileLogs("post:start", req, { fileIdFromPath: options?.fileId ?? null });
   const originError = mutationOriginError(req);
   if (originError) {
+    logFileLogs("post:blocked-origin", req, { reason: originError });
     return NextResponse.json({ error: originError }, { status: 403 });
   }
 
   const user = await requireApiUser();
   if (!user) {
+    logFileLogs("post:unauthorized", req);
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const form = await req.formData().catch(() => null);
   if (!form) {
+    logFileLogs("post:bad-form", req);
     return NextResponse.json({ error: "Invalid form data" }, { status: 400 });
   }
 
-  const fileId = parseFileId(String(form.get("fileId") ?? ""));
+  const fileId = options?.fileId && Number.isFinite(options.fileId)
+    ? options.fileId
+    : parseFileId(String(form.get("fileId") ?? ""));
   if (!fileId) {
+    logFileLogs("post:missing-file-id", req);
     return NextResponse.json({ error: "fileId is required." }, { status: 400 });
   }
 
@@ -40,11 +65,13 @@ export async function POST(req: Request) {
     where: { AND: [{ id: fileId }, departmentScopedWhere(user)] },
   });
   if (!record) {
+    logFileLogs("post:file-not-found", req, { fileId });
     return NextResponse.json({ error: "File not found" }, { status: 404 });
   }
 
   const upload = form.get("file");
   if (!(upload instanceof File)) {
+    logFileLogs("post:missing-upload", req, { fileId });
     return NextResponse.json({ error: "Logs Excel file is required." }, { status: 400 });
   }
 
@@ -75,6 +102,7 @@ export async function POST(req: Request) {
   }
 
   if (!year || !month) {
+    logFileLogs("post:period-detection-failed", req, { fileId });
     return NextResponse.json({ error: "Could not determine log month/year from Excel." }, { status: 400 });
   }
 
@@ -82,6 +110,7 @@ export async function POST(req: Request) {
   try {
     await ensureMediaDirsWritable();
   } catch {
+    logFileLogs("post:media-dir-error", req, { fileId });
     return NextResponse.json(
       { error: "Media directories are missing or not writable. Please check server folder permissions for /app/media." },
       { status: 500 },
@@ -111,6 +140,7 @@ export async function POST(req: Request) {
     const result = await processAttendance(inputPath, output.fullPath);
 
     if (!result.success) {
+      logFileLogs("post:process-failed", req, { fileId, error: result.error ?? "Processing failed" });
       await prisma.processedFile.update({
         where: { id: record.id },
         data: { status: "failed", errorMessage: result.error ?? "Processing failed" },
@@ -122,12 +152,14 @@ export async function POST(req: Request) {
       where: { id: record.id },
       data: { status: "completed", processedFile: output.relativePath, errorMessage: null },
     });
+    logFileLogs("post:success", req, { fileId, rows: result.output_rows ?? 0 });
 
     return NextResponse.json({
       success: true,
       message: `Logs imported and attendance reprocessed (${result.output_rows ?? 0} rows).`,
     });
   } catch (error) {
+    logFileLogs("post:exception", req, { fileId, error: error instanceof Error ? error.message : String(error) });
     await prisma.processedFile.update({
       where: { id: record.id },
       data: { status: "failed", errorMessage: error instanceof Error ? error.message : "Processing failed" },
@@ -136,20 +168,26 @@ export async function POST(req: Request) {
   }
 }
 
-export async function DELETE(req: Request) {
+export async function deleteFileLogs(req: Request, options?: FileLogHandlerOptions) {
+  logFileLogs("delete:start", req, { fileIdFromPath: options?.fileId ?? null });
   const originError = mutationOriginError(req);
   if (originError) {
+    logFileLogs("delete:blocked-origin", req, { reason: originError });
     return NextResponse.json({ error: originError }, { status: 403 });
   }
 
   const user = await requireApiUser();
   if (!user) {
+    logFileLogs("delete:unauthorized", req);
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const url = new URL(req.url);
-  const fileId = parseFileId(url.searchParams.get("fileId"));
+  const fileId = options?.fileId && Number.isFinite(options.fileId)
+    ? options.fileId
+    : parseFileId(url.searchParams.get("fileId"));
   if (!fileId) {
+    logFileLogs("delete:missing-file-id", req);
     return NextResponse.json({ error: "fileId is required." }, { status: 400 });
   }
 
@@ -157,12 +195,14 @@ export async function DELETE(req: Request) {
     where: { AND: [{ id: fileId }, departmentScopedWhere(user)] },
   });
   if (!record) {
+    logFileLogs("delete:file-not-found", req, { fileId });
     return NextResponse.json({ error: "File not found" }, { status: 404 });
   }
 
   const base = path.basename(record.originalFile);
   const m = /^attendance_(\d{4})_(\d{2})\.xlsx$/i.exec(base);
   if (!m) {
+    logFileLogs("delete:attendance-not-periodized", req, { fileId });
     return NextResponse.json(
       { error: "Attendance record does not have month/year naming yet." },
       { status: 400 },
@@ -171,5 +211,18 @@ export async function DELETE(req: Request) {
   const logsName = `hrms_logs_${m[1]}_${m[2]}.xlsx`;
   const logsPath = path.join(process.cwd(), "media", "uploads", logsName);
   await fs.unlink(logsPath).catch(() => {});
+  logFileLogs("delete:success", req, { fileId, logsName });
   return NextResponse.json({ success: true, message: "Existing logs reset. You can import a new logs file now." });
+}
+
+export async function POST(req: Request) {
+  return postFileLogs(req);
+}
+
+export async function DELETE(req: Request) {
+  return deleteFileLogs(req);
+}
+
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204 });
 }

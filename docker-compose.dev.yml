@@ -48,4 +48,3 @@ services:
 networks:
   grsd_ams_network:
     driver: bridge
-

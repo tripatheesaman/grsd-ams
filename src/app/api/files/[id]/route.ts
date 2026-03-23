@@ -6,6 +6,7 @@ import { absoluteFromMedia } from "@/server/storage/files";
 import { promises as fs } from "node:fs";
 import { jsonWithNumber } from "@/server/serialization/serializers";
 import { mutationOriginError } from "@/server/security/origin";
+import { deleteFileLogs, postFileLogs } from "@/app/api/file-logs/route";
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await requireApiUser();
@@ -38,6 +39,10 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   }
 
   const { id } = await params;
+  if (id === "logs") {
+    // Compatibility fallback for legacy clients that still hit /api/files/logs.
+    return deleteFileLogs(req);
+  }
   const file = await prisma.processedFile.findFirst({
     where: { AND: [{ id: Number(id) }, departmentScopedWhere(user)] },
   });
@@ -54,4 +59,13 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   }
 
   return NextResponse.json({ success: true });
+}
+
+export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  if (id === "logs") {
+    // Compatibility fallback for legacy clients that still hit /api/files/logs.
+    return postFileLogs(req);
+  }
+  return NextResponse.json({ error: "Method not allowed for this endpoint." }, { status: 405 });
 }
