@@ -24,19 +24,12 @@ export default function LogsUploader({ fileId, hasLogs }: Props) {
     try {
       const form = new FormData();
       form.append("file", file);
-      let res = await fetch(withBasePath(`/api/files/${resolvedFileId}/logs`), {
+      form.append("fileId", resolvedFileId);
+      const res = await fetch(withBasePath("/api/file-logs"), {
         method: "POST",
         body: form,
         credentials: "include",
       });
-      if (res.status === 404 || res.status === 405) {
-        form.append("fileId", resolvedFileId);
-        res = await fetch(withBasePath("/api/files/logs"), {
-          method: "POST",
-          body: form,
-          credentials: "include",
-        });
-      }
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
       setMessage(data?.message || "Logs imported.");
@@ -54,16 +47,10 @@ export default function LogsUploader({ fileId, hasLogs }: Props) {
     setBusy(true);
     setMessage("Resetting existing logs…");
     try {
-      let res = await fetch(withBasePath(`/api/files/${resolvedFileId}/logs`), {
+      const res = await fetch(withBasePath(`/api/file-logs?fileId=${encodeURIComponent(resolvedFileId)}`), {
         method: "DELETE",
         credentials: "include",
       });
-      if (res.status === 404 || res.status === 405) {
-        res = await fetch(withBasePath(`/api/files/logs?fileId=${encodeURIComponent(resolvedFileId)}`), {
-          method: "DELETE",
-          credentials: "include",
-        });
-      }
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
       setLogsPresent(false);
