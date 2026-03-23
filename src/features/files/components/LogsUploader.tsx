@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { withBasePath } from "@/lib/basePath";
 
 type Props = {
@@ -10,7 +9,6 @@ type Props = {
 };
 
 export default function LogsUploader({ fileId, hasLogs }: Props) {
-  const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [logsPresent, setLogsPresent] = useState(hasLogs);
@@ -43,7 +41,7 @@ export default function LogsUploader({ fileId, hasLogs }: Props) {
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
       setMessage(data?.message || "Logs imported.");
       setLogsPresent(true);
-      router.refresh();
+      window.location.reload();
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Failed to import logs.");
     } finally {
@@ -70,7 +68,7 @@ export default function LogsUploader({ fileId, hasLogs }: Props) {
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
       setLogsPresent(false);
       setMessage(data?.message || "Logs reset.");
-      router.refresh();
+      window.location.reload();
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Failed to reset logs.");
     } finally {

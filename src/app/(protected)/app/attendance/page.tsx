@@ -255,7 +255,7 @@ export default async function AttendancePage({ searchParams }: PageProps) {
         </Link>
       </div>
 
-      <form className="nac-card grid gap-3 p-3 md:grid-cols-2 xl:grid-cols-3">
+      <form method="GET" action="/app/attendance" className="nac-card grid gap-3 p-3 md:grid-cols-2 xl:grid-cols-3">
         <input type="hidden" name="tab" value={currentTab} />
         <input type="hidden" name="page" value="1" />
         <div>
@@ -294,7 +294,7 @@ export default async function AttendancePage({ searchParams }: PageProps) {
           </select>
         </div>
         <div className="md:col-span-2 xl:col-span-3 flex justify-end">
-          <button className="nac-btn-primary px-4 py-2.5 text-sm">Apply Filters</button>
+          <button type="submit" className="nac-btn-primary px-4 py-2.5 text-sm">Apply Filters</button>
         </div>
       </form>
 
