@@ -2,10 +2,11 @@ import { NextResponse } from "next/server";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { basePath } from "@/lib/basePath";
+import { expectedOriginForRequest } from "@/server/security/origin";
 
 export async function GET(req: Request) {
   try {
-    const origin = new URL(req.url).origin;
+    const origin = expectedOriginForRequest(req);
     const appBasePath = (basePath || "").replace(/\/$/, "");
     const bookmarkletPath = path.join(process.cwd(), "public", "extension", "bookmarklet.js");
     const raw = (await fs.readFile(bookmarkletPath, "utf-8")).trim();
