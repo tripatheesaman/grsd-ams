@@ -1,6 +1,6 @@
 import path from "node:path";
 import { promises as fs } from "node:fs";
-import { PROCESSED_ROOT, UPLOAD_ROOT, ensureMediaDirs } from "@/server/paths";
+import { PROCESSED_ROOT, UPLOAD_ROOT, ensureMediaDirsWritable } from "@/server/paths";
 
 export { PROCESSED_ROOT };
 
@@ -12,7 +12,7 @@ export function publicFileUrl(relativePath: string) {
 }
 
 export async function writeUpload(file: File) {
-  ensureMediaDirs();
+  await ensureMediaDirsWritable();
   const bytes = await file.arrayBuffer();
   const buffer = Buffer.from(bytes);
   const filename = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
@@ -28,7 +28,7 @@ export async function writeUpload(file: File) {
 }
 
 export async function writeUploadNamed(file: File, desiredName: string) {
-  ensureMediaDirs();
+  await ensureMediaDirsWritable();
   const bytes = await file.arrayBuffer();
   const buffer = Buffer.from(bytes);
   const filename = desiredName.replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -72,7 +72,7 @@ export function processedOutputFor(originalAbsolutePath: string) {
 }
 
 export async function renameUploadedFile(relativePath: string, desiredName: string) {
-  ensureMediaDirs();
+  await ensureMediaDirsWritable();
   const currentAbs = absoluteFromMedia(relativePath);
   const filename = desiredName.replace(/[^a-zA-Z0-9._-]/g, "_");
   const targetAbs = path.join(UPLOAD_ROOT, filename);

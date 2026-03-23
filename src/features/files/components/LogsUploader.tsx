@@ -31,7 +31,7 @@ export default function LogsUploader({ fileId, hasLogs }: Props) {
         body: form,
         credentials: "include",
       });
-      if (res.status === 404) {
+      if (res.status === 404 || res.status === 405) {
         form.append("fileId", resolvedFileId);
         res = await fetch(withBasePath("/api/files/logs"), {
           method: "POST",
@@ -60,7 +60,7 @@ export default function LogsUploader({ fileId, hasLogs }: Props) {
         method: "DELETE",
         credentials: "include",
       });
-      if (res.status === 404) {
+      if (res.status === 404 || res.status === 405) {
         res = await fetch(withBasePath(`/api/files/logs?fileId=${encodeURIComponent(resolvedFileId)}`), {
           method: "DELETE",
           credentials: "include",
