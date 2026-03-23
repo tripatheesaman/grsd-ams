@@ -4,9 +4,22 @@ import path from "node:path";
 import { basePath } from "@/lib/basePath";
 import { expectedOriginForRequest } from "@/server/security/origin";
 
+function safeOrigin(value: string | null | undefined): string | null {
+  if (!value) return null;
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+}
+
 export async function GET(req: Request) {
   try {
-    const origin = expectedOriginForRequest(req);
+    const envOrigin = safeOrigin(process.env.APP_ORIGIN);
+    const headerOrigin =
+      safeOrigin(req.headers.get("origin")) ??
+      safeOrigin(req.headers.get("referer"));
+    const origin = envOrigin ?? headerOrigin ?? expectedOriginForRequest(req);
     const appBasePath = (basePath || "").replace(/\/$/, "");
     const bookmarkletPath = path.join(process.cwd(), "public", "extension", "bookmarklet.js");
     const raw = (await fs.readFile(bookmarkletPath, "utf-8")).trim();
