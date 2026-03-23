@@ -9,7 +9,7 @@ export default function ExtensionInstaller() {
   const bookmarkName = "GrSD-AMS";
 
   useEffect(() => {
-    fetch(withBasePath("/api/extension/bookmarklet"))
+    fetch(withBasePath(`/api/extension/bookmarklet?t=${Date.now()}`), { cache: "no-store" })
       .then((r) => r.json())
       .then((d) => setBookmarklet(typeof d?.bookmarklet === "string" ? d.bookmarklet : null))
       .catch(() => setBookmarklet(null));

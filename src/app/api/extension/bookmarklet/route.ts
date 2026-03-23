@@ -17,7 +17,10 @@ export async function GET(req: Request) {
     if (!code) {
       return NextResponse.json({ error: "Bookmarklet code is empty" }, { status: 500 });
     }
-    return NextResponse.json({ bookmarklet: "javascript:" + code });
+    return NextResponse.json(
+      { bookmarklet: "javascript:" + code },
+      { headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } },
+    );
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Failed to load bookmarklet" }, { status: 500 });
   }
