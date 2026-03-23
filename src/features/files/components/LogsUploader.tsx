@@ -16,6 +16,7 @@ export default function LogsUploader({ fileId, hasLogs }: Props) {
   const [logsPresent, setLogsPresent] = useState(hasLogs);
 
   if (!fileId) return null;
+  const resolvedFileId = fileId;
 
   async function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -25,13 +26,13 @@ export default function LogsUploader({ fileId, hasLogs }: Props) {
     try {
       const form = new FormData();
       form.append("file", file);
-      let res = await fetch(withBasePath(`/api/files/${fileId}/logs`), {
+      let res = await fetch(withBasePath(`/api/files/${resolvedFileId}/logs`), {
         method: "POST",
         body: form,
         credentials: "include",
       });
       if (res.status === 404) {
-        form.append("fileId", fileId);
+        form.append("fileId", resolvedFileId);
         res = await fetch(withBasePath("/api/files/logs"), {
           method: "POST",
           body: form,
@@ -55,12 +56,12 @@ export default function LogsUploader({ fileId, hasLogs }: Props) {
     setBusy(true);
     setMessage("Resetting existing logs…");
     try {
-      let res = await fetch(withBasePath(`/api/files/${fileId}/logs`), {
+      let res = await fetch(withBasePath(`/api/files/${resolvedFileId}/logs`), {
         method: "DELETE",
         credentials: "include",
       });
       if (res.status === 404) {
-        res = await fetch(withBasePath(`/api/files/logs?fileId=${encodeURIComponent(fileId)}`), {
+        res = await fetch(withBasePath(`/api/files/logs?fileId=${encodeURIComponent(resolvedFileId)}`), {
           method: "DELETE",
           credentials: "include",
         });
