@@ -63,7 +63,7 @@ export default function UserForm({
       setBusy(false);
       return;
     }
-    router.push("/app/users");
+    router.push(withBasePath("/app/users"));
     router.refresh();
   }
 

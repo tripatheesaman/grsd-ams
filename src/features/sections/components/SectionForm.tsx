@@ -47,7 +47,7 @@ export default function SectionForm({ departments, initial }: { departments: Dep
       return;
     }
 
-    router.push("/app/sections");
+    router.push(withBasePath("/app/sections"));
     router.refresh();
   }
 

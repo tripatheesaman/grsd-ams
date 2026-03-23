@@ -32,7 +32,7 @@ export default function UserMenu({ firstName, lastName, username }: Props) {
   async function onLogout() {
     setLoading(true);
     await fetch(withBasePath("/api/auth/logout"), { method: "POST" });
-    router.push("/login");
+    router.push(withBasePath("/login"));
     router.refresh();
   }
 

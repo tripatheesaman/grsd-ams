@@ -1,4 +1,5 @@
 const APP_ORIGIN = process.env.APP_ORIGIN?.trim();
+const APP_ORIGIN_NORMALIZED = safeOrigin(APP_ORIGIN ?? null);
 
 function safeOrigin(value: string | null): string | null {
   if (!value) {
@@ -12,8 +13,8 @@ function safeOrigin(value: string | null): string | null {
 }
 
 export function expectedOriginForRequest(request: Request): string {
-  if (APP_ORIGIN) {
-    return APP_ORIGIN;
+  if (APP_ORIGIN_NORMALIZED) {
+    return APP_ORIGIN_NORMALIZED;
   }
   return new URL(request.url).origin;
 }

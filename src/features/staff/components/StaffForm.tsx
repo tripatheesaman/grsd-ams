@@ -52,7 +52,7 @@ export default function StaffForm({ sections, initial }: { sections: Section[]; 
       return;
     }
 
-    router.push("/app/staff");
+    router.push(withBasePath("/app/staff"));
     router.refresh();
   }
 

@@ -33,7 +33,7 @@ export default function LoginPage() {
       return;
     }
 
-    router.push("/app");
+    router.push(withBasePath("/app"));
     router.refresh();
   }
 

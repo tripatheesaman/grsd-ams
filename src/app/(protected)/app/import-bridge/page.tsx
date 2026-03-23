@@ -123,7 +123,7 @@ export default function ImportBridgePage() {
           setStatus("success");
           setMessage("Attendance imported. Opening Attendance page…");
           setTimeout(() => {
-            router.push("/app/attendance?tab=detailed");
+            router.push(withBasePath("/app/attendance?tab=detailed"));
             window.close();
           }, 900);
         })
