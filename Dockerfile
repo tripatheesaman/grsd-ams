@@ -2,15 +2,17 @@
     FROM node:20-alpine AS builder
     WORKDIR /app
     
+    # Install dependencies
     COPY package*.json ./
     RUN npm install --no-audit --no-fund --loglevel=error
     
+    # Copy source code
     COPY . .
     
-    # Ensure Prisma client is generated during the image build.
-    # This avoids "Can't resolve '@/generated/prisma/client'" when `src/generated` isn't present in the build context.
+    # Generate Prisma client
     RUN npm run prisma:generate
     
+    # Build Next.js standalone output
     RUN npm run build
     
     # ---- Runtime stage ----
@@ -19,11 +21,10 @@
     
     ENV NODE_ENV=production
     
-    COPY --from=builder /app ./
-    # Next's `output: "standalone"` serves static assets from:
-    #   .next/standalone/.next/static
-    # Copy them there explicitly, otherwise `_next/static/*` returns 404.
-    COPY --from=builder /app/.next/static ./.next/standalone/.next/static
-    
+
+    COPY --from=builder /app/.next/standalone ./
+    COPY --from=builder /app/node_modules ./node_modules
+    COPY --from=builder /app/package.json ./package.json
     EXPOSE 3000
-    CMD ["node", ".next/standalone/server.js"]
+    
+    CMD ["node", "server.js"]
