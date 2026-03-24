@@ -91,6 +91,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       await transporter.sendMail({
         from: fromAddress,
         to: section.sectionEmail!,
+        cc: config.ccRecipients.length > 0 ? config.ccRecipients : undefined,
         subject,
         text: bodyText,
         html,

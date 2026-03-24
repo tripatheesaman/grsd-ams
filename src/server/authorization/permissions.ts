@@ -1,6 +1,14 @@
 import type { Prisma } from "@/generated/prisma/client";
 import type { SessionUser } from "@/server/types";
 
+export function hasElevatedAdminAccess(user: SessionUser) {
+  return user.isSuperuser || (user.isDepartmentAdmin && user.departmentId !== null);
+}
+
+export function isDepartmentScopedAdmin(user: SessionUser) {
+  return !user.isSuperuser && user.isDepartmentAdmin && user.departmentId !== null;
+}
+
 export function departmentScopedWhere(user: SessionUser): Prisma.ProcessedFileWhereInput {
   if (user.isSuperuser) {
     return {};

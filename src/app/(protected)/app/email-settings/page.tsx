@@ -2,10 +2,11 @@ import { notFound } from "next/navigation";
 import { requireSessionUser } from "@/server/auth/session";
 import { readEmailConfigForUi } from "@/server/email/config";
 import EmailSettingsForm from "@/features/email/components/EmailSettingsForm";
+import { hasElevatedAdminAccess } from "@/server/authorization/permissions";
 
 export default async function EmailSettingsPage() {
   const user = await requireSessionUser();
-  if (!user.isSuperuser) notFound();
+  if (!hasElevatedAdminAccess(user)) notFound();
 
   const config = await readEmailConfigForUi();
 

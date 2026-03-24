@@ -1,15 +1,18 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireSessionUser } from "@/server/auth/session";
+import { hasElevatedAdminAccess, isDepartmentScopedAdmin } from "@/server/authorization/permissions";
 import { prisma } from "@/server/db/prisma";
 import UserForm from "@/features/users/components/UserForm";
 
 export default async function NewUserPage() {
   const session = await requireSessionUser();
-  if (!session.isSuperuser) redirect("/app");
+  if (!hasElevatedAdminAccess(session)) redirect("/app");
 
   const departments = await prisma.department.findMany({
-    where: { isActive: true },
+    where: isDepartmentScopedAdmin(session)
+      ? { id: session.departmentId ?? -1, isActive: true }
+      : { isActive: true },
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });
@@ -23,15 +26,17 @@ export default async function NewUserPage() {
       <UserForm
         mode="create"
         departments={departments}
+        allowGlobalSuperadmin={!isDepartmentScopedAdmin(session)}
         initial={{
           username: "",
           email: "",
           firstName: "",
           lastName: "",
-          departmentId: "",
+          departmentId: session.departmentId ? String(session.departmentId) : "",
           isActive: true,
           isStaff: false,
           isSuperuser: false,
+          isDepartmentAdmin: false,
         }}
       />
     </section>

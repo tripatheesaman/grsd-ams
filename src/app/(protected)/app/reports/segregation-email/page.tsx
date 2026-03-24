@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { requireSessionUser } from "@/server/auth/session";
-import { departmentScopedWhere, sectionScopedWhere } from "@/server/authorization/permissions";
+import { departmentScopedWhere, hasElevatedAdminAccess, sectionScopedWhere } from "@/server/authorization/permissions";
 import { prisma } from "@/server/db/prisma";
 import { readEmailConfigForUi } from "@/server/email/config";
 import SegregationEmailSender from "@/features/reports/components/SegregationEmailSender";
@@ -39,6 +39,7 @@ function formatRecordLabel(originalFile: string, createdAt: Date) {
 
 export default async function SegregationEmailPage({ searchParams }: PageProps) {
   const user = await requireSessionUser();
+  const canAccessAdminTools = hasElevatedAdminAccess(user);
   const { fileId = "" } = await searchParams;
 
   const [files, sections, emailConfig] = await Promise.all([
@@ -65,7 +66,7 @@ export default async function SegregationEmailPage({ searchParams }: PageProps) 
           <Link href="/app/reports" className="nac-btn-secondary px-3 py-2 text-xs">
             Back to Reports
           </Link>
-          {user.isSuperuser ? (
+          {canAccessAdminTools ? (
             <Link href="/app/email-settings" className="nac-btn-secondary px-3 py-2 text-xs">
               SMTP & Templates
             </Link>

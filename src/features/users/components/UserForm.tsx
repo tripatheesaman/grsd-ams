@@ -15,22 +15,34 @@ type InitialValues = {
   isActive: boolean;
   isStaff: boolean;
   isSuperuser: boolean;
+  isDepartmentAdmin: boolean;
 };
+
+type RoleValue = "user" | "department_superadmin" | "superadmin";
+
+function deriveRole(initial: InitialValues): RoleValue {
+  if (initial.isSuperuser) return "superadmin";
+  if (initial.isDepartmentAdmin) return "department_superadmin";
+  return "user";
+}
 
 export default function UserForm({
   departments,
   mode,
   userId,
   initial,
+  allowGlobalSuperadmin = true,
 }: {
   departments: Department[];
   mode: "create" | "edit";
   userId?: string;
   initial: InitialValues;
+  allowGlobalSuperadmin?: boolean;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const initialRole = deriveRole(initial);
 
   async function submitFormData(formData: FormData) {
     setBusy(true);
@@ -44,8 +56,17 @@ export default function UserForm({
       departmentId: String(formData.get("departmentId") ?? "").trim(),
       isActive: formData.get("isActive") === "on",
       isStaff: formData.get("isStaff") === "on",
-      isSuperuser: formData.get("isSuperuser") === "on",
+      isSuperuser: false,
+      isDepartmentAdmin: false,
     };
+    const role = String(formData.get("role") ?? "user") as RoleValue;
+    if (role === "superadmin" && allowGlobalSuperadmin) {
+      payload.isSuperuser = true;
+      payload.isDepartmentAdmin = false;
+    } else if (role === "department_superadmin") {
+      payload.isSuperuser = false;
+      payload.isDepartmentAdmin = true;
+    }
     if (mode === "edit" && !payload.password) {
       delete (payload as { password?: string }).password;
     }
@@ -118,10 +139,18 @@ export default function UserForm({
         <input type="checkbox" name="isStaff" defaultChecked={initial.isStaff} />
         Staff Access
       </label>
-      <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" name="isSuperuser" defaultChecked={initial.isSuperuser} />
-        Superadmin
-      </label>
+      <div>
+        <label className="mb-1 block text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Role</label>
+        <select
+          name="role"
+          defaultValue={!allowGlobalSuperadmin && initialRole === "superadmin" ? "department_superadmin" : initialRole}
+          className="nac-select"
+        >
+          <option value="user">Department User</option>
+          <option value="department_superadmin">Department Superadmin</option>
+          {allowGlobalSuperadmin ? <option value="superadmin">Superadmin</option> : null}
+        </select>
+      </div>
       <div className="md:col-span-2 flex items-center justify-between">
         {error ? <p className="text-sm text-red-600">{error}</p> : <span />}
         <button type="submit" className="nac-btn-primary px-4 py-2.5 text-sm" disabled={busy}>

@@ -134,6 +134,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     firstName: user.firstName,
     lastName: user.lastName,
     isSuperuser: user.isSuperuser,
+    isDepartmentAdmin: user.isDepartmentAdmin,
     departmentId: user.departmentId,
   };
 }

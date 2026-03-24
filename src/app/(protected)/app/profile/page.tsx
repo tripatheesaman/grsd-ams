@@ -37,7 +37,13 @@ export default async function ProfilePage() {
           </div>
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 sm:col-span-2">
             <p className="text-xs uppercase tracking-[0.12em] text-slate-500">Role</p>
-            <p className="mt-1 font-semibold text-slate-900">{user?.isSuperuser ? "Superuser" : "User"}</p>
+            <p className="mt-1 font-semibold text-slate-900">
+              {user?.isSuperuser
+                ? "Superadmin"
+                : user?.isDepartmentAdmin
+                ? "Department Superadmin"
+                : "User"}
+            </p>
           </div>
         </div>
       </section>

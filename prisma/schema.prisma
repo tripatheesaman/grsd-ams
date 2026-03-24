@@ -56,6 +56,7 @@ model User {
   isActive     Boolean        @default(true) @map("is_active")
   isStaff      Boolean        @default(false) @map("is_staff")
   isSuperuser  Boolean        @default(false) @map("is_superuser")
+  isDepartmentAdmin Boolean   @default(false) @map("is_department_admin")
   dateJoined   DateTime       @default(now()) @map("date_joined")
   lastLogin    DateTime?      @map("last_login")
   files        ProcessedFile[]

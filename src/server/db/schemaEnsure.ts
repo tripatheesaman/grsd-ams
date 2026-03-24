@@ -20,6 +20,11 @@ export async function ensureRuntimeSchemaCompatibility() {
         ALTER TABLE public.sections
         ADD COLUMN IF NOT EXISTS email VARCHAR(254);
       `);
+
+      await prisma.$executeRawUnsafe(`
+        ALTER TABLE public.users
+        ADD COLUMN IF NOT EXISTS is_department_admin BOOLEAN NOT NULL DEFAULT FALSE;
+      `);
     })().catch((error) => {
       ensurePromise = null;
       throw error;

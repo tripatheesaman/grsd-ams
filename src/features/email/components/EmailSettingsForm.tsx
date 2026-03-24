@@ -8,6 +8,7 @@ type Props = {
   initial: {
     smtpUsername: string;
     hasPassword: boolean;
+    ccRecipients: string;
     defaultSubject: string;
     defaultBody: string;
   };
@@ -28,6 +29,7 @@ export default function EmailSettingsForm({ initial }: Props) {
     const payload = {
       smtpUsername: String(form.get("smtpUsername") ?? ""),
       smtpPassword: String(form.get("smtpPassword") ?? ""),
+      ccRecipients: String(form.get("ccRecipients") ?? ""),
       defaultSubject: String(form.get("defaultSubject") ?? ""),
       defaultBody: String(form.get("defaultBody") ?? ""),
     };
@@ -71,6 +73,18 @@ export default function EmailSettingsForm({ initial }: Props) {
           Default Subject Template
         </label>
         <input id="defaultSubject" name="defaultSubject" defaultValue={initial.defaultSubject} className="nac-input" required />
+      </div>
+      <div>
+        <label htmlFor="ccRecipients" className="mb-1 block text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+          CC Recipients (comma separated)
+        </label>
+        <input
+          id="ccRecipients"
+          name="ccRecipients"
+          defaultValue={initial.ccRecipients}
+          className="nac-input"
+          placeholder="hr@example.com, manager@example.com"
+        />
       </div>
       <div>
         <label htmlFor="defaultBody" className="mb-1 block text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">

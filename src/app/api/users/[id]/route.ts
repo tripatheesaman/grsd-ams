@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireApiUser, createPasswordHash } from "@/server/auth/session";
+import { hasElevatedAdminAccess, isDepartmentScopedAdmin } from "@/server/authorization/permissions";
 import { prisma } from "@/server/db/prisma";
 import { mutationOriginError } from "@/server/security/origin";
 
@@ -14,12 +15,13 @@ const updateSchema = z.object({
   isActive: z.boolean().optional().default(true),
   isStaff: z.boolean().optional().default(false),
   isSuperuser: z.boolean().optional().default(false),
+  isDepartmentAdmin: z.boolean().optional().default(false),
 });
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await requireApiUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!user.isSuperuser) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!hasElevatedAdminAccess(user)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { id } = await params;
   const row = await prisma.user.findUnique({
@@ -27,6 +29,9 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
     include: { department: { select: { id: true, name: true } } },
   });
   if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (isDepartmentScopedAdmin(user) && row.departmentId !== user.departmentId) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   return NextResponse.json({
     user: {
@@ -40,6 +45,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
       isActive: row.isActive,
       isStaff: row.isStaff,
       isSuperuser: row.isSuperuser,
+      isDepartmentAdmin: row.isDepartmentAdmin,
     },
   });
 }
@@ -50,11 +56,18 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
   const session = await requireApiUser();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!session.isSuperuser) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!hasElevatedAdminAccess(session)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { id } = await params;
   const current = await prisma.user.findUnique({ where: { id: Number(id) } });
   if (!current) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const isDeptAdminSession = isDepartmentScopedAdmin(session);
+  if (isDeptAdminSession && current.departmentId !== session.departmentId) {
+    return NextResponse.json({ error: "You can only update users in your own department." }, { status: 403 });
+  }
+  if (isDeptAdminSession && current.isSuperuser) {
+    return NextResponse.json({ error: "Department superadmin cannot manage global superadmins." }, { status: 403 });
+  }
 
   const payload = await req.json().catch(() => null);
   const parsed = updateSchema.safeParse(payload);
@@ -71,8 +84,24 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   if (!Number.isFinite(departmentId)) {
     return NextResponse.json({ error: "Department is required." }, { status: 400 });
   }
-  const dep = await prisma.department.findUnique({ where: { id: departmentId } });
+
+  if (isDeptAdminSession && !session.departmentId) {
+    return NextResponse.json({ error: "Department admin must be assigned to a department." }, { status: 400 });
+  }
+  const finalDepartmentId = isDeptAdminSession ? session.departmentId! : departmentId;
+  if (isDeptAdminSession && finalDepartmentId !== departmentId) {
+    return NextResponse.json({ error: "You can only assign your own department." }, { status: 403 });
+  }
+
+  const dep = await prisma.department.findUnique({ where: { id: finalDepartmentId } });
   if (!dep) return NextResponse.json({ error: "Department not found" }, { status: 404 });
+
+  if (isDeptAdminSession && parsed.data.isSuperuser) {
+    return NextResponse.json({ error: "Department superadmin cannot assign global superadmin role." }, { status: 403 });
+  }
+
+  const isSuperuser = isDeptAdminSession ? false : parsed.data.isSuperuser;
+  const isDepartmentAdmin = !isSuperuser && parsed.data.isDepartmentAdmin;
 
   const data: {
     username: string;
@@ -83,16 +112,18 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     isActive: boolean;
     isStaff: boolean;
     isSuperuser: boolean;
+    isDepartmentAdmin: boolean;
     password?: string;
   } = {
     username: parsed.data.username,
     email: parsed.data.email,
     firstName: parsed.data.firstName,
     lastName: parsed.data.lastName,
-    departmentId,
+    departmentId: finalDepartmentId,
     isActive: parsed.data.isActive,
     isStaff: parsed.data.isStaff,
-    isSuperuser: parsed.data.isSuperuser,
+    isSuperuser,
+    isDepartmentAdmin,
   };
   if (parsed.data.password && parsed.data.password.trim() !== "") {
     data.password = await createPasswordHash(parsed.data.password);
@@ -108,7 +139,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
 
   const session = await requireApiUser();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!session.isSuperuser) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!hasElevatedAdminAccess(session)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { id } = await params;
   const targetId = Number(id);
@@ -118,6 +149,12 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
 
   const current = await prisma.user.findUnique({ where: { id: targetId } });
   if (!current) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (isDepartmentScopedAdmin(session) && current.departmentId !== session.departmentId) {
+    return NextResponse.json({ error: "You can only delete users in your own department." }, { status: 403 });
+  }
+  if (isDepartmentScopedAdmin(session) && current.isSuperuser) {
+    return NextResponse.json({ error: "Department superadmin cannot delete global superadmins." }, { status: 403 });
+  }
 
   await prisma.user.delete({ where: { id: targetId } });
   return NextResponse.json({ success: true });

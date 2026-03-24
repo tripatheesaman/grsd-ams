@@ -3,9 +3,11 @@ import Image from "next/image";
 import { requireSessionUser } from "@/server/auth/session";
 import UserMenu from "@/features/auth/components/UserMenu";
 import { withBasePath } from "@/lib/basePath";
+import { hasElevatedAdminAccess } from "@/server/authorization/permissions";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireSessionUser();
+  const canAccessAdminTools = hasElevatedAdminAccess(user);
 
   return (
     <div className="na-shell">
@@ -29,8 +31,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <Link href="/app/reports">Reports</Link>
           <Link href="/app/staff">Staff</Link>
           <Link href="/app/sections">Sections</Link>
-          {user.isSuperuser ? <Link href="/app/email-settings">Email Settings</Link> : null}
-          {user.isSuperuser ? <Link href="/app/users">Users</Link> : null}
+          {canAccessAdminTools ? <Link href="/app/email-settings">Email Settings</Link> : null}
+          {canAccessAdminTools ? <Link href="/app/users">Users</Link> : null}
           <Link href="/app/profile">Profile</Link>
         </nav>
         <div className="mt-auto space-y-3 rounded-xl border border-slate-700/60 bg-slate-900/70 p-3 text-xs text-slate-100 shadow-lg shadow-black/70">

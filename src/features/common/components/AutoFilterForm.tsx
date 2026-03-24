@@ -2,7 +2,6 @@
 
 import { FormEvent, ReactNode, useCallback, useMemo, useRef, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { withBasePath } from "@/lib/basePath";
 
 type Props = {
   actionPath?: string;
@@ -52,7 +51,7 @@ export default function AutoFilterForm({
       const href = query ? `${targetPath}?${query}` : targetPath;
 
       startTransition(() => {
-        router.replace(withBasePath(href), { scroll: false });
+        router.replace(href, { scroll: false });
       });
     },
     [router, searchParams, targetPath],

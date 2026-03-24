@@ -4,6 +4,7 @@ import { getAppSettings, setAppSetting } from "@/server/settings/appSettings";
 export const EMAIL_SETTING_KEYS = {
   smtpUsername: "smtp_username",
   smtpPasswordEnc: "smtp_password_enc",
+  ccRecipients: "email_cc_recipients",
   defaultSubject: "email_default_subject_template",
   defaultBody: "email_default_body_template",
 } as const;
@@ -15,15 +16,26 @@ export const DEFAULT_BODY_TEMPLATE =
 export type EmailConfig = {
   smtpUsername: string;
   smtpPassword: string;
+  ccRecipients: string[];
   defaultSubject: string;
   defaultBody: string;
 };
+
+function parseCcRecipients(raw: string | null | undefined): string[] {
+  const text = String(raw ?? "").trim();
+  if (!text) return [];
+  return text
+    .split(/[;,]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
 
 export async function readEmailConfigForUi() {
   const values = await getAppSettings(Object.values(EMAIL_SETTING_KEYS));
   return {
     smtpUsername: values[EMAIL_SETTING_KEYS.smtpUsername] ?? "",
     hasPassword: Boolean(values[EMAIL_SETTING_KEYS.smtpPasswordEnc]),
+    ccRecipients: values[EMAIL_SETTING_KEYS.ccRecipients] ?? "",
     defaultSubject: values[EMAIL_SETTING_KEYS.defaultSubject] ?? DEFAULT_SUBJECT_TEMPLATE,
     defaultBody: values[EMAIL_SETTING_KEYS.defaultBody] ?? DEFAULT_BODY_TEMPLATE,
   };
@@ -33,6 +45,7 @@ export async function readEmailConfigForSending(): Promise<EmailConfig> {
   const values = await getAppSettings(Object.values(EMAIL_SETTING_KEYS));
   const smtpUsername = (values[EMAIL_SETTING_KEYS.smtpUsername] ?? "").trim();
   const encrypted = values[EMAIL_SETTING_KEYS.smtpPasswordEnc];
+  const ccRecipients = parseCcRecipients(values[EMAIL_SETTING_KEYS.ccRecipients]);
   const defaultSubject = values[EMAIL_SETTING_KEYS.defaultSubject] ?? DEFAULT_SUBJECT_TEMPLATE;
   const defaultBody = values[EMAIL_SETTING_KEYS.defaultBody] ?? DEFAULT_BODY_TEMPLATE;
 
@@ -46,6 +59,7 @@ export async function readEmailConfigForSending(): Promise<EmailConfig> {
   return {
     smtpUsername,
     smtpPassword: decryptSecret(encrypted),
+    ccRecipients,
     defaultSubject,
     defaultBody,
   };
@@ -54,10 +68,12 @@ export async function readEmailConfigForSending(): Promise<EmailConfig> {
 export async function saveEmailConfig(input: {
   smtpUsername: string;
   smtpPassword?: string;
+  ccRecipients: string;
   defaultSubject: string;
   defaultBody: string;
 }) {
   await setAppSetting(EMAIL_SETTING_KEYS.smtpUsername, input.smtpUsername.trim());
+  await setAppSetting(EMAIL_SETTING_KEYS.ccRecipients, input.ccRecipients.trim());
   await setAppSetting(EMAIL_SETTING_KEYS.defaultSubject, input.defaultSubject);
   await setAppSetting(EMAIL_SETTING_KEYS.defaultBody, input.defaultBody);
   if (typeof input.smtpPassword === "string" && input.smtpPassword.length > 0) {

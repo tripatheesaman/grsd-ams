@@ -21,6 +21,8 @@ type PageProps = {
     staffId?: string;
     designation?: string;
     section?: string;
+    employeeLevel?: string;
+    employeeType?: string;
     page?: string;
   }>;
 };
@@ -52,6 +54,8 @@ export default async function AttendancePage({ searchParams }: PageProps) {
     staffId = "",
     designation = "",
     section = "",
+    employeeLevel = "",
+    employeeType = "",
     page = "1",
   } = await searchParams;
   const currentTab: TabKey = tab === "leave" ? "leave" : "detailed";
@@ -105,11 +109,17 @@ export default async function AttendancePage({ searchParams }: PageProps) {
         name: s.name,
         designation: s.designation,
         section: s.section?.name ?? "",
+        level: s.level,
+        typeOfEmployment: s.typeOfEmployment,
         priority: s.priority ?? 999,
       },
     ]),
   );
   const sectionOptions = [...new Set(staffRows.map((s) => s.section?.name ?? "").filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const levelOptions = [...new Set(staffRows.map((s) => String(s.level ?? "")).filter(Boolean))].sort((a, b) => Number(a) - Number(b));
+  const typeOptions = [...new Set(staffRows.map((s) => String(s.typeOfEmployment ?? "").trim()).filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b),
+  );
 
   const files = await prisma.processedFile.findMany({
     where: { AND: [departmentScopedWhere(user), { status: "completed" }] },
@@ -172,6 +182,8 @@ export default async function AttendancePage({ searchParams }: PageProps) {
         ...row,
         Staff_ID: meta?.staffid ?? row.Employee_ID,
         Section: meta?.section ?? "",
+        Employee_Level: meta?.level ?? "",
+        Employee_Type: meta?.typeOfEmployment ?? "",
       };
     });
 
@@ -194,6 +206,8 @@ export default async function AttendancePage({ searchParams }: PageProps) {
         ...row,
         section: meta?.section ?? "",
         canonical_staffid: meta?.staffid ?? String(row.employee_id ?? ""),
+        employee_level: meta?.level ?? "",
+        employee_type: meta?.typeOfEmployment ?? "",
       };
     });
   }
@@ -218,6 +232,14 @@ export default async function AttendancePage({ searchParams }: PageProps) {
     if (section.trim()) {
       const needle = section.toLowerCase();
       out = out.filter((row) => String(row.Section ?? row.section ?? "").toLowerCase().includes(needle));
+    }
+    if (employeeLevel.trim()) {
+      const needle = employeeLevel.toLowerCase();
+      out = out.filter((row) => String(row.Employee_Level ?? row.employee_level ?? "").toLowerCase().includes(needle));
+    }
+    if (employeeType.trim()) {
+      const needle = employeeType.toLowerCase();
+      out = out.filter((row) => String(row.Employee_Type ?? row.employee_type ?? "").toLowerCase().includes(needle));
     }
     if (q.trim()) {
       const needle = q.toLowerCase();
@@ -264,6 +286,8 @@ export default async function AttendancePage({ searchParams }: PageProps) {
       staffId,
       designation,
       section,
+      employeeLevel,
+      employeeType,
       page: String(nextPage),
     }).toString();
 
@@ -279,13 +303,35 @@ export default async function AttendancePage({ searchParams }: PageProps) {
 
       <div className="flex gap-2">
         <Link
-          href={`/app/attendance?${new URLSearchParams({ tab: "detailed", fileId: selected?.id.toString() ?? "", q, employeeName, staffId, designation, section, page: "1" }).toString()}`}
+          href={`/app/attendance?${new URLSearchParams({
+            tab: "detailed",
+            fileId: selected?.id.toString() ?? "",
+            q,
+            employeeName,
+            staffId,
+            designation,
+            section,
+            employeeLevel,
+            employeeType,
+            page: "1",
+          }).toString()}`}
           className={`${currentTab === "detailed" ? "nac-btn-primary" : "nac-btn-secondary"} px-3 py-2 text-xs`}
         >
           Detailed Attendance
         </Link>
         <Link
-          href={`/app/attendance?${new URLSearchParams({ tab: "leave", fileId: selected?.id.toString() ?? "", q, employeeName, staffId, designation, section, page: "1" }).toString()}`}
+          href={`/app/attendance?${new URLSearchParams({
+            tab: "leave",
+            fileId: selected?.id.toString() ?? "",
+            q,
+            employeeName,
+            staffId,
+            designation,
+            section,
+            employeeLevel,
+            employeeType,
+            page: "1",
+          }).toString()}`}
           className={`${currentTab === "leave" ? "nac-btn-primary" : "nac-btn-secondary"} px-3 py-2 text-xs`}
         >
           Leave Details
@@ -317,6 +363,24 @@ export default async function AttendancePage({ searchParams }: PageProps) {
             <option value="">All sections</option>
             {sectionOptions.map((name) => (
               <option key={name} value={name}>{name}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label htmlFor="employeeLevel" className="mb-1 block text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Employee Level</label>
+          <select id="employeeLevel" name="employeeLevel" defaultValue={employeeLevel} className="nac-select">
+            <option value="">All levels</option>
+            {levelOptions.map((level) => (
+              <option key={level} value={level}>{level}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label htmlFor="employeeType" className="mb-1 block text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Employee Type</label>
+          <select id="employeeType" name="employeeType" defaultValue={employeeType} className="nac-select">
+            <option value="">All types</option>
+            {typeOptions.map((type) => (
+              <option key={type} value={type}>{type}</option>
             ))}
           </select>
         </div>

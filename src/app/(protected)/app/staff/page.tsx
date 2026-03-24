@@ -18,6 +18,8 @@ export default async function StaffPage({
     staffId?: string;
     designation?: string;
     sectionId?: string;
+    employeeType?: string;
+    employeeLevel?: string;
     page?: string;
     pageSize?: string;
     sortBy?: string;
@@ -32,6 +34,8 @@ export default async function StaffPage({
     staffId,
     designation,
     sectionId,
+    employeeType,
+    employeeLevel,
     page = "1",
     pageSize = "25",
     sortBy = "priority",
@@ -68,6 +72,15 @@ export default async function StaffPage({
       filters.push({ sectionId: parsed });
     }
   }
+  if ((employeeType ?? "").trim()) {
+    filters.push({ typeOfEmployment: { contains: (employeeType ?? "").trim(), mode: "insensitive" } });
+  }
+  if ((employeeLevel ?? "").trim()) {
+    const parsed = Number.parseInt((employeeLevel ?? "").trim(), 10);
+    if (Number.isFinite(parsed)) {
+      filters.push({ level: parsed });
+    }
+  }
 
   const whereClause = { AND: filters };
   const totalCount = await prisma.staffDetail.count({ where: whereClause });
@@ -98,10 +111,13 @@ export default async function StaffPage({
   });
   const staffOptions = await prisma.staffDetail.findMany({
     where,
-    select: { designation: true, typeOfEmployment: true },
+    select: { designation: true, typeOfEmployment: true, level: true },
   });
   const designationSuggestions = [...new Set(staffOptions.map((s) => s.designation.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
-  const employmentSuggestions = [...new Set(["permanent", "contract", "monthly wages", ...staffOptions.map((s) => s.typeOfEmployment.trim().toLowerCase()).filter(Boolean)])];
+  const employmentSuggestions = [
+    ...new Set(["permanent", "contract", "monthly wages", ...staffOptions.map((s) => s.typeOfEmployment.trim().toLowerCase()).filter(Boolean)]),
+  ].sort((a, b) => a.localeCompare(b));
+  const levelSuggestions = [...new Set(staffOptions.map((s) => s.level).filter((v) => Number.isFinite(v)))].sort((a, b) => a - b);
   const addBulkHref = `/app/staff?${new URLSearchParams({ ...(q ? { q } : {}), ...(bulk === "add" ? {} : { bulk: "add" }) }).toString()}`;
   const editBulkHref = `/app/staff?${new URLSearchParams({ ...(q ? { q } : {}), ...(bulk === "edit" ? {} : { bulk: "edit" }) }).toString()}`;
   const filteredExportHref = `/api/staff/export?${new URLSearchParams({
@@ -111,6 +127,8 @@ export default async function StaffPage({
     ...(staffId ? { staffId } : {}),
     ...(designation ? { designation } : {}),
     ...(sectionId ? { sectionId } : {}),
+    ...(employeeType ? { employeeType } : {}),
+    ...(employeeLevel ? { employeeLevel } : {}),
   }).toString()}`;
   const allExportHref = withBasePath("/api/staff/export?scope=all");
   const buildPageQuery = (nextPage: number) =>
@@ -120,6 +138,8 @@ export default async function StaffPage({
       ...(staffId ? { staffId } : {}),
       ...(designation ? { designation } : {}),
       ...(sectionId ? { sectionId } : {}),
+      ...(employeeType ? { employeeType } : {}),
+      ...(employeeLevel ? { employeeLevel } : {}),
       ...(bulk ? { bulk } : {}),
       ...(sortBy ? { sortBy } : {}),
       ...(sortDir ? { sortDir } : {}),
@@ -134,6 +154,8 @@ export default async function StaffPage({
       ...(staffId ? { staffId } : {}),
       ...(designation ? { designation } : {}),
       ...(sectionId ? { sectionId } : {}),
+      ...(employeeType ? { employeeType } : {}),
+      ...(employeeLevel ? { employeeLevel } : {}),
       ...(bulk ? { bulk } : {}),
       sortBy: nextSortBy,
       sortDir: nextSortDir,
@@ -149,7 +171,12 @@ export default async function StaffPage({
   return (
     <section className="space-y-3">
       <div className="flex items-center justify-between">
-        <h1 className="nac-heading text-xl font-semibold">Staff</h1>
+        <div>
+          <h1 className="nac-heading text-xl font-semibold">Staff</h1>
+          <p className="mt-1 text-xs text-slate-600">
+            Total Staff: <span className="font-semibold text-slate-900">{totalCount}</span>
+          </p>
+        </div>
         <div className="flex items-center gap-2">
           <Link href={addBulkHref} className="nac-btn-secondary px-3 py-2 text-xs">
             Add Bulk Staff
@@ -200,6 +227,28 @@ export default async function StaffPage({
             {sections.map((s) => (
               <option key={s.id.toString()} value={s.id.toString()}>
                 {s.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Employee Type</label>
+          <select name="employeeType" defaultValue={employeeType ?? ""} className="nac-select">
+            <option value="">All types</option>
+            {employmentSuggestions.map((type) => (
+              <option key={type} value={type}>
+                {type}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Employee Level</label>
+          <select name="employeeLevel" defaultValue={employeeLevel ?? ""} className="nac-select">
+            <option value="">All levels</option>
+            {levelSuggestions.map((level) => (
+              <option key={String(level)} value={String(level)}>
+                {level}
               </option>
             ))}
           </select>

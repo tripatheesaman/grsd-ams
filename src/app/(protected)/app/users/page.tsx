@@ -1,18 +1,20 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireSessionUser } from "@/server/auth/session";
+import { hasElevatedAdminAccess, isDepartmentScopedAdmin } from "@/server/authorization/permissions";
 import { prisma } from "@/server/db/prisma";
 import UserDeleteButton from "@/features/users/components/UserDeleteButton";
 
 export default async function UsersPage() {
   const session = await requireSessionUser();
-  if (!session.isSuperuser) {
+  if (!hasElevatedAdminAccess(session)) {
     redirect("/app");
   }
 
   const users = await prisma.user.findMany({
+    where: isDepartmentScopedAdmin(session) ? { departmentId: session.departmentId } : undefined,
     include: { department: { select: { name: true } } },
-    orderBy: [{ isSuperuser: "desc" }, { username: "asc" }],
+    orderBy: [{ isSuperuser: "desc" }, { isDepartmentAdmin: "desc" }, { username: "asc" }],
   });
 
   return (
@@ -43,7 +45,7 @@ export default async function UsersPage() {
                 <td>{u.firstName} {u.lastName}</td>
                 <td>{u.email}</td>
                 <td>{u.department?.name ?? "-"}</td>
-                <td>{u.isSuperuser ? "Superadmin" : "Department User"}</td>
+                <td>{u.isSuperuser ? "Superadmin" : u.isDepartmentAdmin ? "Department Superadmin" : "Department User"}</td>
                 <td>{u.isActive ? "Active" : "Inactive"}</td>
                 <td className="space-x-2">
                   <Link className="nac-link mr-2" href={`/app/users/${u.id}/edit`}>Edit</Link>
