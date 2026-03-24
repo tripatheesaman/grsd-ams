@@ -44,6 +44,32 @@ type StaffMeta = {
   priority: number;
 };
 
+function staffIdNumericValue(staffId: string): number | null {
+  const m = /(\d+)/.exec(String(staffId ?? ""));
+  if (!m) return null;
+  const n = Number.parseInt(m[1], 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+function compareStaffIdNumericAsc(a: string, b: string): number {
+  const aNum = staffIdNumericValue(a);
+  const bNum = staffIdNumericValue(b);
+  if (aNum !== null && bNum !== null && aNum !== bNum) {
+    return aNum - bNum;
+  }
+  if (aNum !== null && bNum === null) return -1;
+  if (aNum === null && bNum !== null) return 1;
+  return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" });
+}
+
+function comparePriorityThenStaffId(
+  a: { priority: number; staffid: string },
+  b: { priority: number; staffid: string },
+): number {
+  if (a.priority !== b.priority) return a.priority - b.priority;
+  return compareStaffIdNumericAsc(a.staffid, b.staffid);
+}
+
 function normalizeStaffId(staffId: unknown): string | null {
   if (staffId === null || staffId === undefined || String(staffId).trim() === "") {
     return null;
@@ -735,7 +761,11 @@ function calcLeaveTotals(records: AttendanceRow[]) {
   };
 }
 
-async function hrmsWorkbookBuffer(inputRows: AttendanceRow[]): Promise<Buffer> {
+type HrmsWorkbookOptions = {
+  employeeSortMeta?: Map<string, { priority: number; staffid: string }>;
+};
+
+async function hrmsWorkbookBuffer(inputRows: AttendanceRow[], options?: HrmsWorkbookOptions): Promise<Buffer> {
   const rows = inputRows.map((r) => ({
     ...r,
     Employee_ID: String(r.Employee_ID ?? ""),
@@ -768,7 +798,14 @@ async function hrmsWorkbookBuffer(inputRows: AttendanceRow[]): Promise<Buffer> {
     grouped.get(key)?.push(row);
   }
 
-  const employees = [...grouped.entries()].sort(([a], [b]) => a.localeCompare(b));
+  const employees = [...grouped.entries()].sort(([aEmpId], [bEmpId]) => {
+    const aMeta = options?.employeeSortMeta?.get(aEmpId);
+    const bMeta = options?.employeeSortMeta?.get(bEmpId);
+    if (aMeta && bMeta) return comparePriorityThenStaffId(aMeta, bMeta);
+    if (aMeta && !bMeta) return -1;
+    if (!aMeta && bMeta) return 1;
+    return compareStaffIdNumericAsc(aEmpId, bEmpId);
+  });
   let sn = 1;
   for (const [empId, empRows] of employees) {
     const first = empRows[0] ?? {
@@ -955,6 +992,7 @@ type SectionMeta = {
   sectionCode: string | null;
   sectionEmail: string | null;
   departmentName: string | null;
+  staffid: string;
   typeOfEmployment: string;
   priority: number;
 };
@@ -984,6 +1022,7 @@ async function sectionMap(departmentId?: string) {
       sectionCode: row.section?.code ?? null,
       sectionEmail: row.section?.email ?? null,
       departmentName: row.section?.department?.name ?? null,
+      staffid: row.staffid,
       typeOfEmployment: row.typeOfEmployment,
       priority: row.priority ?? 999,
     });
@@ -1008,7 +1047,7 @@ export async function segregationSectionReports(inputPath: string, departmentId?
     throw new Error("No attendance data found");
   }
   const staff = await sectionMap(departmentId);
-  const sectionRows = new Map<string, { meta: SectionMeta; rows: AttendanceRow[] }>();
+  const sectionRows = new Map<string, { meta: SectionMeta; rows: AttendanceRow[]; employeeSortMeta: Map<string, { priority: number; staffid: string }> }>();
   for (const row of rows) {
     const normalized = normalizeStaffId(row.Employee_ID);
     const meta =
@@ -1018,22 +1057,33 @@ export async function segregationSectionReports(inputPath: string, departmentId?
         sectionCode: null,
         sectionEmail: null,
         departmentName: null,
+        staffid: String(row.Employee_ID ?? ""),
         typeOfEmployment: "unknown",
         priority: 999,
       };
     const bucketKey = meta.sectionId ? `id:${meta.sectionId}` : `name:${meta.sectionName}`;
     if (!sectionRows.has(bucketKey)) {
-      sectionRows.set(bucketKey, { meta, rows: [] });
+      sectionRows.set(bucketKey, { meta, rows: [], employeeSortMeta: new Map() });
     }
-    sectionRows.get(bucketKey)?.rows.push(row);
+    const bucket = sectionRows.get(bucketKey);
+    bucket?.rows.push(row);
+    if (bucket) {
+      const empId = String(row.Employee_ID ?? "");
+      if (!bucket.employeeSortMeta.has(empId)) {
+        bucket.employeeSortMeta.set(empId, {
+          priority: meta.priority ?? 999,
+          staffid: meta.staffid || empId,
+        });
+      }
+    }
   }
 
   const reports: SegregationSectionWorkbook[] = [];
-  for (const { meta, rows: sectionData } of sectionRows.values()) {
+  for (const { meta, rows: sectionData, employeeSortMeta } of sectionRows.values()) {
     if (sectionData.length === 0) {
       continue;
     }
-    const buf = await hrmsWorkbookBuffer(sectionData);
+    const buf = await hrmsWorkbookBuffer(sectionData, { employeeSortMeta });
     const clean = meta.sectionName.replace(/[^a-zA-Z0-9 _-]/g, "");
     reports.push({
       sectionId: meta.sectionId,
@@ -1062,21 +1112,22 @@ export async function segregationReport(inputPath: string, outputPath: string, d
 }
 
 async function getTemplateStaff(staffType: "detailed" | "monthly", departmentId?: string): Promise<StaffMeta[]> {
-  const where =
+  const where: Record<string, unknown> =
     staffType === "detailed"
       ? {
-          typeOfEmployment: { in: ["permanent", "contract"] },
+          OR: [
+            { typeOfEmployment: { equals: "permanent", mode: "insensitive" } },
+            { typeOfEmployment: { equals: "contract", mode: "insensitive" } },
+          ],
           ...(departmentId ? { departmentId: Number(departmentId) } : {}),
-          sectionId: { not: null },
         }
       : {
-          typeOfEmployment: "monthly wages",
+          typeOfEmployment: { equals: "monthly wages", mode: "insensitive" },
           ...(departmentId ? { departmentId: Number(departmentId) } : {}),
-          sectionId: { not: null },
         };
   const rows = await prisma.staffDetail.findMany({
     where,
-    orderBy: [{ priority: "asc" }, { staffid: "asc" }],
+    orderBy: [{ priority: "asc" }],
     select: {
       staffid: true,
       name: true,
@@ -1087,7 +1138,33 @@ async function getTemplateStaff(staffType: "detailed" | "monthly", departmentId?
       priority: true,
     },
   });
-  return rows;
+
+  const employmentRank = (typeOfEmployment: string) => {
+    const t = String(typeOfEmployment ?? "").trim().toLowerCase();
+    if (t === "permanent") return 1;
+    if (t === "contract") return 2;
+    return 3;
+  };
+  const numericStaffIdValue = (staffid: string) => {
+    const digits = String(staffid ?? "").replace(/[^0-9]/g, "");
+    if (!digits) return 999999;
+    const parsed = Number.parseInt(digits, 10);
+    return Number.isFinite(parsed) ? parsed : 999999;
+  };
+
+  return rows.sort((a, b) => {
+    // Match legacy ordering:
+    // 1) priority asc
+    // 2) permanent first, then contract
+    // 3) numeric-only staffid asc
+    const pDelta = (a.priority ?? 999) - (b.priority ?? 999);
+    if (pDelta !== 0) return pDelta;
+    const eDelta = employmentRank(a.typeOfEmployment) - employmentRank(b.typeOfEmployment);
+    if (eDelta !== 0) return eDelta;
+    const idDelta = numericStaffIdValue(a.staffid) - numericStaffIdValue(b.staffid);
+    if (idDelta !== 0) return idDelta;
+    return String(a.staffid).localeCompare(String(b.staffid), undefined, { numeric: true, sensitivity: "base" });
+  });
 }
 
 async function fillTemplate(
@@ -1122,6 +1199,13 @@ async function fillTemplate(
     })
     .filter((v): v is { staff: StaffMeta; empId: string } => v !== null);
 
+  const attendanceByEmployee = new Map<string, AttendanceRow[]>();
+  for (const row of attendance) {
+    const empId = String(row.Employee_ID ?? "");
+    if (!attendanceByEmployee.has(empId)) attendanceByEmployee.set(empId, []);
+    attendanceByEmployee.get(empId)?.push(row);
+  }
+
   await fs.access(templatePath);
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.readFile(templatePath);
@@ -1146,26 +1230,401 @@ async function fillTemplate(
     }
   };
 
+  const setCellSafe = (address: string, value: string | number) => {
+    const cell = ws.getCell(address);
+    const target = cell.isMerged ? cell.master : cell;
+    target.value = value;
+  };
+
+  const titleCase = (value: string) =>
+    String(value ?? "")
+      .toLowerCase()
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+
+  const normalizeStatusCode = (statusRaw: unknown) => {
+    const base = String(statusRaw ?? "").trim().toUpperCase();
+    return base.replace(/\s+/g, "");
+  };
+  const parseHoBracketStatus = (statusRaw: unknown) => {
+    const raw = String(statusRaw ?? "").trim().toUpperCase();
+    const m = /^HO\s*\(\s*\d+\s*\)\s*(\*)?$/.exec(raw);
+    if (!m) return null;
+    return { hasStar: Boolean(m[1]) };
+  };
+
+  const hasTime = (value: unknown) => {
+    const s = String(value ?? "").trim();
+    return s !== "" && s.toLowerCase() !== "nan";
+  };
+  const hasBothTimes = (inTime: unknown, outTime: unknown) => hasTime(inTime) && hasTime(outTime);
+  const hasOnlyInTime = (inTime: unknown, outTime: unknown) => hasTime(inTime) && !hasTime(outTime);
+
+  const parseHmToMinutes = (value: unknown) => {
+    const m = /^(\d{1,2}):(\d{2})/.exec(String(value ?? "").trim());
+    if (!m) return null;
+    const h = Number.parseInt(m[1], 10);
+    const mm = Number.parseInt(m[2], 10);
+    if (!Number.isFinite(h) || !Number.isFinite(mm)) return null;
+    if (h < 0 || h > 23 || mm < 0 || mm > 59) return null;
+    return h * 60 + mm;
+  };
+
+  const isOddShiftDay = (inTime: unknown, outTime: unknown) => {
+    if (!hasBothTimes(inTime, outTime)) return false;
+    const inMins = parseHmToMinutes(inTime);
+    const outMins = parseHmToMinutes(outTime);
+    if (inMins === null || outMins === null) return false;
+    return inMins < 5 * 60 + 30 || outMins > 21 * 60;
+  };
+
+  const isInTimeBetween23And05 = (inTime: unknown) => {
+    if (!hasTime(inTime)) return false;
+    const mins = parseHmToMinutes(inTime);
+    if (mins === null) return false;
+    const hour = Math.floor(mins / 60);
+    return hour >= 23 || hour < 5;
+  };
+
+  type LeaveType = "pl" | "sl" | "cl" | "subl" | "duty" | "other";
+  const leaveCodesByType: Record<LeaveType, Set<string>> = {
+    pl: new Set(["PL", "ALCL"]),
+    sl: new Set(["SL", "SLC"]),
+    cl: new Set(["CL", "CLC"]),
+    subl: new Set(["SUBL", "SUB"]),
+    duty: new Set(["DUTY", "FLTD"]),
+    other: new Set([
+      "L",
+      "SLWP",
+      "SLWOP",
+      "ML",
+      "MLUP",
+      "MCL",
+      "MOL",
+      "MLCO",
+      "MLC",
+      "MLCUP",
+      "MTLUPCC",
+      "STDL",
+      "SLP",
+      "ACCIDENTAL",
+      "ALC",
+      "ABSC",
+      "LUR",
+      "SCC",
+      "SPC",
+      "SPP",
+      "SSL",
+    ]),
+  };
+  const hasAnyLeaveCode = (statusCode: string) =>
+    Object.values(leaveCodesByType).some((set) => [...set].some((code) => statusCode.includes(code)));
+  const classifyLeave = (statusCode: string): LeaveType | null => {
+    if ([...leaveCodesByType.pl].some((code) => statusCode.includes(code))) return "pl";
+    if ([...leaveCodesByType.sl].some((code) => statusCode.includes(code))) return "sl";
+    if ([...leaveCodesByType.cl].some((code) => statusCode.includes(code))) return "cl";
+    if ([...leaveCodesByType.subl].some((code) => statusCode.includes(code))) return "subl";
+    if ([...leaveCodesByType.duty].some((code) => statusCode.includes(code))) return "duty";
+    if ([...leaveCodesByType.other].some((code) => statusCode.includes(code))) return "other";
+    return null;
+  };
+
+  const presentStatuses = new Set(["P", "HP", "A*"]);
+  const weeklyStatuses = new Set(["WO", "HO"]);
+  const absentStatuses = new Set(["A", "HA", "ABSC", "LUR"]);
+  const presentDutyLikeStatuses = new Set(["FW", "PFW", "TR", "PTR", "LD", "MT"]);
+
+  const dayOnly = (value: unknown) => {
+    const s = String(value ?? "").trim();
+    const m = /^(\d{1,2})\b/.exec(s);
+    return m ? m[1] : s;
+  };
+
+  const extractPeriod = async () => {
+    try {
+      const NEPALI_MONTH_NAMES = [
+        "",
+        "Baiskah",
+        "Jestha",
+        "Ashadh",
+        "Shrawan",
+        "Bhadra",
+        "Ashoj",
+        "Kartik",
+        "Mangsir",
+        "Poush",
+        "Magh",
+        "Falgun",
+        "Chaitra",
+      ];
+      const asMonthYear = (raw: string) => {
+        const text = String(raw ?? "").trim();
+        const dateMatch = /(\d{4})\s*\/\s*(\d{1,2})(?:\s*\/\s*\d{1,2})?/.exec(text);
+        if (!dateMatch) return null;
+        const year = Number.parseInt(dateMatch[1], 10);
+        const month = Number.parseInt(dateMatch[2], 10);
+        if (!year || !month || month < 1 || month > 12) return null;
+        const monthName = NEPALI_MONTH_NAMES[month] || `Month ${month}`;
+        return `${monthName} ${year}`;
+      };
+
+      const workbookRaw = readWorkbookFromDisk(inputPath);
+      const firstSheetName = workbookRaw.SheetNames[0];
+      if (!firstSheetName) return "Unknown";
+      const wsRaw = workbookRaw.Sheets[firstSheetName];
+      const matrix = XLSX.utils.sheet_to_json(wsRaw, { header: 1, defval: "" }) as unknown[][];
+      const normalizePeriodText = (raw: unknown) =>
+        String(raw ?? "")
+          .trim()
+          .replace(/^\s*period\s*:?,?\s*/i, "")
+          .trim();
+
+      // First try the legacy expected location.
+      const fixedCell = normalizePeriodText(matrix?.[8]?.[0] ?? "");
+      if (fixedCell) return asMonthYear(fixedCell) ?? fixedCell;
+
+      // Fallback: scan top rows/columns for any "Period" label.
+      const maxRows = Math.min(matrix.length, 40);
+      for (let r = 0; r < maxRows; r += 1) {
+        const row = matrix[r] ?? [];
+        const maxCols = Math.min(row.length, 8);
+        for (let c = 0; c < maxCols; c += 1) {
+          const raw = String(row[c] ?? "").trim();
+          if (!raw) continue;
+          if (/^\s*period\b/i.test(raw)) {
+            const cleaned = normalizePeriodText(raw);
+            if (cleaned) return asMonthYear(cleaned) ?? cleaned;
+            // In some files "Period" is one cell and value is next cell.
+            const next = normalizePeriodText(row[c + 1] ?? "");
+            if (next) return asMonthYear(next) ?? next;
+          }
+        }
+      }
+
+      // Filename fallback for renamed attendance files: attendance_YYYY_MM.xlsx
+      const base = path.basename(inputPath);
+      const m = /attendance_(\d{4})_(\d{1,2})\.xlsx/i.exec(base);
+      if (m) {
+        const year = Number.parseInt(m[1], 10);
+        const month = Number.parseInt(m[2], 10);
+        if (year && month >= 1 && month <= 12) {
+          const monthName = NEPALI_MONTH_NAMES[month] || `Month ${month}`;
+          return `${monthName} ${year}`;
+        }
+      }
+
+      return "Unknown";
+    } catch {
+      return "Unknown";
+    }
+  };
+
+  const period = await extractPeriod();
+  setCellSafe("A1", `Permanent & Contract Staffs Attendance Report for ${period}`);
+
+  const totalDays = (() => {
+    try {
+      const dates = new Set(
+        attendance
+          .map((row) => String(row.Date ?? "").trim())
+          .filter(Boolean)
+          .map((d) => dayOnly(d)),
+      );
+      return dates.size;
+    } catch {
+      return 0;
+    }
+  })();
+  setCellSafe("F2", totalDays);
+
   let rowIndex = 4;
   for (const { staff, empId } of targetStaff) {
-    const empRows = attendance.filter((r) => String(r.Employee_ID) === String(empId));
-    const totals = calcLeaveTotals(empRows);
+    const empRows = attendanceByEmployee.get(String(empId)) ?? [];
+    let presentDays = 0;
+    let absentDays = 0;
+    let weeklyOffDays = 0;
+    let allowanceDays = 0;
+    let personalLeaveDays = 0;
+    let sickLeaveDays = 0;
+    let casualLeaveDays = 0;
+    let substituteLeaveDays = 0;
+    let dutyLeaveDays = 0;
+    let otherLeaveDays = 0;
+    let oddShiftDays = 0;
+
+    const personalLeaveDates: string[] = [];
+    const sickLeaveDates: string[] = [];
+    const casualLeaveDates: string[] = [];
+    const substituteLeaveDates: string[] = [];
+    const dutyLeaveDates: string[] = [];
+    const otherLeaveDates: string[] = [];
+    const absentDates: string[] = [];
+
+    for (const row of empRows) {
+      const rawStatus = row.Status;
+      const statusCode = normalizeStatusCode(rawStatus);
+      const date = String(row.Date ?? "");
+      const inTime = row.InTime;
+      const outTime = row.OutTime;
+
+      if (isOddShiftDay(inTime, outTime)) oddShiftDays += 1;
+
+      // Special handling requested:
+      // HO(<n>) statuses are holidays (never absent):
+      // - if either in/out time exists => Present + Allowance
+      // - else => Present only
+      const hoBracket = parseHoBracketStatus(rawStatus);
+      if (hoBracket) {
+        if (hasTime(inTime) || hasTime(outTime) || hoBracket.hasStar) {
+          presentDays += 1;
+          allowanceDays += 1;
+        } else {
+          presentDays += 1;
+        }
+        continue;
+      }
+
+      const leaveType = classifyLeave(statusCode);
+      const hasLeave = leaveType !== null || hasAnyLeaveCode(statusCode);
+      const hasStar = statusCode.includes("*");
+
+      // Rule update: any leave status with * counts as Present + Allowance.
+      // It must not be counted as leave/others in this case.
+      if (hasLeave && hasStar) {
+        presentDays += 1;
+        allowanceDays += 1;
+        continue;
+      }
+
+      // Legacy rule 1: leave + both in/out => leave only
+      if (hasLeave && hasBothTimes(inTime, outTime)) {
+        if (leaveType === "pl") {
+          personalLeaveDays += 1;
+          personalLeaveDates.push(date);
+        } else if (leaveType === "sl") {
+          sickLeaveDays += 1;
+          sickLeaveDates.push(date);
+        } else if (leaveType === "cl") {
+          casualLeaveDays += 1;
+          casualLeaveDates.push(date);
+        } else if (leaveType === "subl") {
+          substituteLeaveDays += 1;
+          substituteLeaveDates.push(date);
+        } else if (leaveType === "duty") {
+          dutyLeaveDays += 1;
+          dutyLeaveDates.push(date);
+          otherLeaveDays += 1;
+        } else {
+          otherLeaveDays += 1;
+          otherLeaveDates.push(date);
+        }
+        continue;
+      }
+
+      // Legacy rule 2: A* + only in-time between 23:00 and 05:00 => Absent
+      if (statusCode === "A*" && hasOnlyInTime(inTime, outTime) && isInTimeBetween23And05(inTime)) {
+        absentDays += 1;
+        absentDates.push(date);
+        continue;
+      }
+
+      // Legacy rule 3: leave + only in-time between 23:00 and 05:00 => leave
+      if (hasLeave && hasOnlyInTime(inTime, outTime) && isInTimeBetween23And05(inTime)) {
+        if (leaveType === "pl") {
+          personalLeaveDays += 1;
+          personalLeaveDates.push(date);
+        } else if (leaveType === "sl") {
+          sickLeaveDays += 1;
+          sickLeaveDates.push(date);
+        } else if (leaveType === "cl") {
+          casualLeaveDays += 1;
+          casualLeaveDates.push(date);
+        } else if (leaveType === "subl") {
+          substituteLeaveDays += 1;
+          substituteLeaveDates.push(date);
+        } else if (leaveType === "duty") {
+          dutyLeaveDays += 1;
+          dutyLeaveDates.push(date);
+          otherLeaveDays += 1;
+        } else {
+          otherLeaveDays += 1;
+          otherLeaveDates.push(date);
+        }
+        continue;
+      }
+
+      // Present-like statuses (tada days)
+      if (presentStatuses.has(statusCode) || presentDutyLikeStatuses.has(statusCode)) {
+        presentDays += 1;
+        allowanceDays += 1;
+        continue;
+      }
+
+      // Weekly off / holiday count as present; allowance only when any work time exists
+      if (weeklyStatuses.has(statusCode)) {
+        presentDays += 1;
+        weeklyOffDays += 1;
+        if (hasTime(inTime) || hasTime(outTime)) {
+          allowanceDays += 1;
+        }
+        continue;
+      }
+
+      if (absentStatuses.has(statusCode)) {
+        absentDays += 1;
+        absentDates.push(date);
+        continue;
+      }
+
+      if (leaveType === "pl") {
+        personalLeaveDays += 1;
+        personalLeaveDates.push(date);
+      } else if (leaveType === "sl") {
+        sickLeaveDays += 1;
+        sickLeaveDates.push(date);
+      } else if (leaveType === "cl") {
+        casualLeaveDays += 1;
+        casualLeaveDates.push(date);
+      } else if (leaveType === "subl") {
+        substituteLeaveDays += 1;
+        substituteLeaveDates.push(date);
+      } else if (leaveType === "duty") {
+        dutyLeaveDays += 1;
+        dutyLeaveDates.push(date);
+        otherLeaveDays += 1;
+      } else if (hasLeave) {
+        otherLeaveDays += 1;
+        otherLeaveDates.push(date);
+      }
+    }
+
+    const remarksParts: string[] = [];
+    const pushRemarks = (label: string, dates: string[]) => {
+      if (dates.length > 0) remarksParts.push(`${label} on ${dates.map((d) => dayOnly(d)).join(", ")}`);
+    };
+    pushRemarks("PL", personalLeaveDates);
+    pushRemarks("CL", casualLeaveDates);
+    pushRemarks("SL", sickLeaveDates);
+    pushRemarks("SUBSTITUTE", substituteLeaveDates);
+    pushRemarks("DUTY", dutyLeaveDates);
+    pushRemarks("Other", otherLeaveDates);
+    pushRemarks("Absent", absentDates);
+
     applyTemplateStyleToRow(rowIndex);
-    ws.getCell(`B${rowIndex}`).value = String(staff.name ?? "").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+    ws.getCell(`B${rowIndex}`).value = titleCase(staff.name);
     ws.getCell(`C${rowIndex}`).value = staff.staffid;
     ws.getCell(`D${rowIndex}`).value = staff.designation;
     ws.getCell(`E${rowIndex}`).value = staff.level;
-    ws.getCell(`F${rowIndex}`).value = totals.presentDays;
-    ws.getCell(`G${rowIndex}`).value = totals.personalLeaveDays;
-    ws.getCell(`H${rowIndex}`).value = totals.sickLeaveDays;
-    ws.getCell(`I${rowIndex}`).value = totals.casualLeaveDays;
-    ws.getCell(`J${rowIndex}`).value = totals.substituteLeaveDays;
-    ws.getCell(`L${rowIndex}`).value = totals.absentDays;
-    ws.getCell(`M${rowIndex}`).value = totals.otherLeaveDays;
-    ws.getCell(`N${rowIndex}`).value = totals.allowanceDays;
-    ws.getCell(`R${rowIndex}`).value = staff.weeklyOff
-      ? String(staff.weeklyOff).toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())
-      : "";
+    ws.getCell(`F${rowIndex}`).value = presentDays;
+    ws.getCell(`G${rowIndex}`).value = personalLeaveDays;
+    ws.getCell(`H${rowIndex}`).value = sickLeaveDays;
+    ws.getCell(`I${rowIndex}`).value = casualLeaveDays;
+    ws.getCell(`J${rowIndex}`).value = substituteLeaveDays;
+    ws.getCell(`L${rowIndex}`).value = absentDays;
+    ws.getCell(`M${rowIndex}`).value = otherLeaveDays;
+    ws.getCell(`N${rowIndex}`).value = allowanceDays;
+    ws.getCell(`Q${rowIndex}`).value = oddShiftDays;
+    ws.getCell(`R${rowIndex}`).value = staff.weeklyOff ? titleCase(staff.weeklyOff) : "";
+    ws.getCell(`S${rowIndex}`).value = remarksParts.join(", ");
     rowIndex += 1;
   }
 

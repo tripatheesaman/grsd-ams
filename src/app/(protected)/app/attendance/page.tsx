@@ -7,6 +7,7 @@ import { prisma } from "@/server/db/prisma";
 import { absoluteFromMedia } from "@/server/storage/files";
 import { leaveSummary, previewAttendance } from "@/server/imports/attendance";
 import LogsUploader from "@/features/files/components/LogsUploader";
+import { withBasePath } from "@/lib/basePath";
 
 type TabKey = "detailed" | "leave";
 
@@ -79,6 +80,22 @@ export default async function AttendancePage({ searchParams }: PageProps) {
     return normalized;
   };
 
+  const staffIdNumericValue = (staffId: string) => {
+    const m = /(\d+)/.exec(staffId);
+    if (!m) return null;
+    const n = Number.parseInt(m[1], 10);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const compareStaffIdNumericAsc = (a: string, b: string) => {
+    const aNum = staffIdNumericValue(a);
+    const bNum = staffIdNumericValue(b);
+    if (aNum !== null && bNum !== null && aNum !== bNum) return aNum - bNum;
+    if (aNum !== null && bNum === null) return -1;
+    if (aNum === null && bNum !== null) return 1;
+    return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+  };
+
   const staffByNorm = new Map(
     staffRows.map((s) => [
       normalizeStaffId(s.staffid),
@@ -87,6 +104,7 @@ export default async function AttendancePage({ searchParams }: PageProps) {
         name: s.name,
         designation: s.designation,
         section: s.section?.name ?? "",
+        priority: s.priority ?? 999,
       },
     ]),
   );
@@ -210,6 +228,24 @@ export default async function AttendancePage({ searchParams }: PageProps) {
   detailedRows = applySharedFilters(detailedRows, (row) => Object.values(row).map((v) => String(v ?? "")));
   leaveRows = applySharedFilters(leaveRows, (row) => Object.values(row).map((v) => String(v ?? "")));
 
+  detailedRows.sort((a, b) => {
+    const aMeta = staffByNorm.get(normalizeStaffId(a.Staff_ID ?? a.Employee_ID));
+    const bMeta = staffByNorm.get(normalizeStaffId(b.Staff_ID ?? b.Employee_ID));
+    const aPriority = aMeta?.priority ?? 999;
+    const bPriority = bMeta?.priority ?? 999;
+    if (aPriority !== bPriority) return aPriority - bPriority;
+    return compareStaffIdNumericAsc(String(a.Staff_ID ?? a.Employee_ID ?? ""), String(b.Staff_ID ?? b.Employee_ID ?? ""));
+  });
+
+  leaveRows.sort((a, b) => {
+    const aMeta = staffByNorm.get(normalizeStaffId(a.canonical_staffid ?? a.employee_id));
+    const bMeta = staffByNorm.get(normalizeStaffId(b.canonical_staffid ?? b.employee_id));
+    const aPriority = aMeta?.priority ?? 999;
+    const bPriority = bMeta?.priority ?? 999;
+    if (aPriority !== bPriority) return aPriority - bPriority;
+    return compareStaffIdNumericAsc(String(a.canonical_staffid ?? a.employee_id ?? ""), String(b.canonical_staffid ?? b.employee_id ?? ""));
+  });
+
   const activeRowsCount = currentTab === "detailed" ? detailedRows.length : leaveRows.length;
   const totalPages = Math.max(Math.ceil(activeRowsCount / PAGE_SIZE), 1);
   const safePage = Math.min(currentPage, totalPages);
@@ -255,7 +291,7 @@ export default async function AttendancePage({ searchParams }: PageProps) {
         </Link>
       </div>
 
-      <form method="GET" action="/app/attendance" className="nac-card grid gap-3 p-3 md:grid-cols-2 xl:grid-cols-3">
+      <form method="GET" action={withBasePath("/app/attendance")} className="nac-card grid gap-3 p-3 md:grid-cols-2 xl:grid-cols-3">
         <input type="hidden" name="tab" value={currentTab} />
         <input type="hidden" name="page" value="1" />
         <div>
