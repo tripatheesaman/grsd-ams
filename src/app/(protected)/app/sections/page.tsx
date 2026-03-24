@@ -4,6 +4,7 @@ import { requireSessionUser } from "@/server/auth/session";
 import { prisma } from "@/server/db/prisma";
 import { sectionScopedWhere } from "@/server/authorization/permissions";
 import type { Prisma } from "@/generated/prisma/client";
+import AutoFilterForm from "@/features/common/components/AutoFilterForm";
 
 export default async function SectionsPage({
   searchParams,
@@ -83,7 +84,7 @@ export default async function SectionsPage({
           <Link href="/app/sections/new" className="nac-btn-primary px-3 py-2">Add Section</Link>
         </div>
       </div>
-      <form className="nac-card p-3">
+      <AutoFilterForm actionPath="/app/sections" className="nac-card p-3">
         <input type="hidden" name="page" value="1" />
         <input type="hidden" name="sortBy" value={sortBy} />
         <input type="hidden" name="sortDir" value={resolvedSortDir} />
@@ -97,7 +98,7 @@ export default async function SectionsPage({
           </select>
           <button className="nac-btn-primary px-4 py-2.5 text-sm">Apply</button>
         </div>
-      </form>
+      </AutoFilterForm>
       <div className="nac-card overflow-auto">
         <table className="nac-table w-full text-sm">
           <thead>

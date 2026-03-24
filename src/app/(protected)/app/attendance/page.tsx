@@ -8,6 +8,7 @@ import { absoluteFromMedia } from "@/server/storage/files";
 import { leaveSummary, previewAttendance } from "@/server/imports/attendance";
 import LogsUploader from "@/features/files/components/LogsUploader";
 import { withBasePath } from "@/lib/basePath";
+import AutoFilterForm from "@/features/common/components/AutoFilterForm";
 
 type TabKey = "detailed" | "leave";
 
@@ -291,7 +292,7 @@ export default async function AttendancePage({ searchParams }: PageProps) {
         </Link>
       </div>
 
-      <form method="GET" action={withBasePath("/app/attendance")} className="nac-card grid gap-3 p-3 md:grid-cols-2 xl:grid-cols-3">
+      <AutoFilterForm actionPath="/app/attendance" className="nac-card grid gap-3 p-3 md:grid-cols-2 xl:grid-cols-3">
         <input type="hidden" name="tab" value={currentTab} />
         <input type="hidden" name="page" value="1" />
         <div>
@@ -332,7 +333,7 @@ export default async function AttendancePage({ searchParams }: PageProps) {
         <div className="md:col-span-2 xl:col-span-3 flex justify-end">
           <button type="submit" className="nac-btn-primary px-4 py-2.5 text-sm">Apply Filters</button>
         </div>
-      </form>
+      </AutoFilterForm>
 
       {selected ? <LogsUploader fileId={selected.id.toString()} hasLogs={hasLogsForSelected} /> : null}
 

@@ -6,6 +6,7 @@ import StaffDeleteButton from "@/features/staff/components/StaffDeleteButton";
 import BulkStaffSync from "@/features/staff/components/BulkStaffSync";
 import { withBasePath } from "@/lib/basePath";
 import type { Prisma } from "@/generated/prisma/client";
+import AutoFilterForm from "@/features/common/components/AutoFilterForm";
 
 export default async function StaffPage({
   searchParams,
@@ -172,7 +173,7 @@ export default async function StaffPage({
         initialShowAddBulk={bulk === "add"}
         initialShowEditBulk={bulk === "edit"}
       />
-      <form className="nac-card grid gap-3 p-3 md:grid-cols-2 xl:grid-cols-3">
+      <AutoFilterForm actionPath="/app/staff" className="nac-card grid gap-3 p-3 md:grid-cols-2 xl:grid-cols-3">
         <input type="hidden" name="page" value="1" />
         <input type="hidden" name="sortBy" value={sortBy} />
         <input type="hidden" name="sortDir" value={resolvedSortDir} />
@@ -215,7 +216,7 @@ export default async function StaffPage({
         <div className="md:col-span-2 xl:col-span-3 flex justify-end">
           <button className="nac-btn-primary px-4 py-2.5 text-sm">Apply Filters</button>
         </div>
-      </form>
+      </AutoFilterForm>
       <div className="nac-card overflow-auto">
         <table className="nac-table w-full text-sm">
           <thead>

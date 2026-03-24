@@ -3,6 +3,7 @@ import { requireSessionUser } from "@/server/auth/session";
 import { departmentScopedWhere } from "@/server/authorization/permissions";
 import { prisma } from "@/server/db/prisma";
 import { withBasePath } from "@/lib/basePath";
+import AutoFilterForm from "@/features/common/components/AutoFilterForm";
 
 type PageProps = {
   searchParams: Promise<{
@@ -78,7 +79,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
         </div>
       </div>
 
-      <form className="nac-card grid gap-3 p-3 md:grid-cols-[1fr,220px,180px,auto] md:items-end">
+      <AutoFilterForm actionPath="/app/reports" className="nac-card grid gap-3 p-3 md:grid-cols-[1fr,220px,180px,auto] md:items-end">
         <div>
           <label htmlFor="q" className="mb-1 block text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
             Search
@@ -111,7 +112,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
           </select>
         </div>
         <button className="nac-btn-primary px-4 py-2.5 text-sm">Apply</button>
-      </form>
+      </AutoFilterForm>
 
       <div className="nac-card overflow-auto">
         <table className="nac-table w-full text-sm">
