@@ -164,52 +164,50 @@ export default async function AttendancePage({ searchParams }: PageProps) {
 
   if (selected) {
     const inputPath = absoluteFromMedia(selected.originalFile);
-    const [detailedPayload, leavePayload] = await Promise.all([
-      previewAttendance(inputPath),
-      (async () => {
-        let scopedStaffIds: string[] = [];
-        if (!user.isSuperuser && user.departmentId) {
-          scopedStaffIds = staffRows.map((s) => s.staffid);
-        }
-        return leaveSummary(inputPath, scopedStaffIds);
-      })(),
-    ]);
+    if (currentTab === "detailed") {
+      const detailedPayload = await previewAttendance(inputPath);
 
-    detailedRows = detailedPayload.rows.map((row) => {
-      const normalized = normalizeStaffId(row.Employee_ID);
-      const meta = staffByNorm.get(normalized);
-      return {
-        ...row,
-        Staff_ID: meta?.staffid ?? row.Employee_ID,
-        Section: meta?.section ?? "",
-        Employee_Level: meta?.level ?? "",
-        Employee_Type: meta?.typeOfEmployment ?? "",
-      };
-    });
+      detailedRows = detailedPayload.rows.map((row) => {
+        const normalized = normalizeStaffId(row.Employee_ID);
+        const meta = staffByNorm.get(normalized);
+        return {
+          ...row,
+          Staff_ID: meta?.staffid ?? row.Employee_ID,
+          Section: meta?.section ?? "",
+          Employee_Level: meta?.level ?? "",
+          Employee_Type: meta?.typeOfEmployment ?? "",
+        };
+      });
 
-    detailedColumns = detailedPayload.columns.includes("Section")
-      ? detailedPayload.columns
-      : [...detailedPayload.columns.slice(0, 3), "Section", ...detailedPayload.columns.slice(3)];
+      detailedColumns = detailedPayload.columns.includes("Section")
+        ? detailedPayload.columns
+        : [...detailedPayload.columns.slice(0, 3), "Section", ...detailedPayload.columns.slice(3)];
 
-    const hasLog = detailedRows.some((row) => {
-      const v = row.Log;
-      return typeof v === "string" ? v.trim().length > 0 : v != null;
-    });
-    if (hasLog && !detailedColumns.includes("Log")) {
-      detailedColumns.push("Log");
+      const hasLog = detailedRows.some((row) => {
+        const v = row.Log;
+        return typeof v === "string" ? v.trim().length > 0 : v != null;
+      });
+      if (hasLog && !detailedColumns.includes("Log")) {
+        detailedColumns.push("Log");
+      }
+    } else {
+      let scopedStaffIds: string[] = [];
+      if (!user.isSuperuser && user.departmentId) {
+        scopedStaffIds = staffRows.map((s) => s.staffid);
+      }
+      const leavePayload = await leaveSummary(inputPath, scopedStaffIds);
+      leaveRows = leavePayload.leave_list.map((row) => {
+        const norm = normalizeStaffId(row.employee_id);
+        const meta = staffByNorm.get(norm);
+        return {
+          ...row,
+          section: meta?.section ?? "",
+          canonical_staffid: meta?.staffid ?? String(row.employee_id ?? ""),
+          employee_level: meta?.level ?? "",
+          employee_type: meta?.typeOfEmployment ?? "",
+        };
+      });
     }
-
-    leaveRows = leavePayload.leave_list.map((row) => {
-      const norm = normalizeStaffId(row.employee_id);
-      const meta = staffByNorm.get(norm);
-      return {
-        ...row,
-        section: meta?.section ?? "",
-        canonical_staffid: meta?.staffid ?? String(row.employee_id ?? ""),
-        employee_level: meta?.level ?? "",
-        employee_type: meta?.typeOfEmployment ?? "",
-      };
-    });
   }
 
   const applySharedFilters = <T extends Record<string, unknown>>(rows: T[], getValues: (row: T) => string[]) => {
@@ -338,7 +336,7 @@ export default async function AttendancePage({ searchParams }: PageProps) {
         </Link>
       </div>
 
-      <AutoFilterForm actionPath="/app/attendance" className="nac-card grid gap-3 p-3 md:grid-cols-2 xl:grid-cols-3">
+      <AutoFilterForm actionPath="/app/attendance" debounceMs={700} className="nac-card grid gap-3 p-3 md:grid-cols-2 xl:grid-cols-3">
         <input type="hidden" name="tab" value={currentTab} />
         <input type="hidden" name="page" value="1" />
         <div>

@@ -51,7 +51,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: err instanceof Error ? err.message : "Email settings are incomplete." }, { status: 400 });
   }
   const transporter = buildSmtpTransport({ username: config.smtpUsername, password: config.smtpPassword });
-  const fromAddress = process.env.SMTP_FROM?.trim() || config.smtpUsername;
+  const fromAddress = config.smtpUsername;
 
   const reports = await segregationSectionReports(
     absoluteFromMedia(file.originalFile),

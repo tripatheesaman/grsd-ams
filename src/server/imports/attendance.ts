@@ -547,6 +547,59 @@ async function loadAttendance(inputPath: string): Promise<AttendanceRow[]> {
   return mergeLogsIntoAttendance(rows, inputPath);
 }
 
+const ATTENDANCE_CACHE_TTL_MS = Math.max(
+  5000,
+  Number.parseInt(process.env.ATTENDANCE_CACHE_TTL_MS ?? "45000", 10) || 45000,
+);
+type AttendanceCacheEntry = {
+  expiresAt: number;
+  promise: Promise<AttendanceRow[]>;
+};
+const attendanceCache = new Map<string, AttendanceCacheEntry>();
+
+async function loadAttendanceCached(inputPath: string): Promise<AttendanceRow[]> {
+  const resolvedPath = path.resolve(inputPath);
+  let mtimeMs = 0;
+  try {
+    const stat = await fs.stat(resolvedPath);
+    mtimeMs = Math.floor(stat.mtimeMs);
+  } catch {
+    // If stat fails, continue without mtime-based invalidation.
+  }
+
+  const cacheKey = `${resolvedPath}|${mtimeMs}`;
+  const now = Date.now();
+  const cached = attendanceCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) {
+    return cached.promise;
+  }
+
+  const promise = loadAttendance(resolvedPath).catch((error) => {
+    attendanceCache.delete(cacheKey);
+    throw error;
+  });
+  attendanceCache.set(cacheKey, {
+    expiresAt: now + ATTENDANCE_CACHE_TTL_MS,
+    promise,
+  });
+
+  if (attendanceCache.size > 32) {
+    for (const [key, entry] of attendanceCache.entries()) {
+      if (entry.expiresAt <= now) {
+        attendanceCache.delete(key);
+      }
+    }
+    if (attendanceCache.size > 48) {
+      const keys = [...attendanceCache.keys()];
+      for (let i = 0; i < keys.length - 48; i += 1) {
+        attendanceCache.delete(keys[i]);
+      }
+    }
+  }
+
+  return promise;
+}
+
 function deriveDayNumber(dateText: string): number | null {
   const parsed = parseDateHeader(dateText);
   if (parsed) {
@@ -937,7 +990,7 @@ export async function processAttendance(inputPath: string, outputPath: string) {
 }
 
 export async function previewAttendance(inputPath: string) {
-  const rows = await loadAttendance(inputPath);
+  const rows = await loadAttendanceCached(inputPath);
   const columns =
     rows.length > 0
       ? Object.keys(rows[0])
@@ -946,7 +999,7 @@ export async function previewAttendance(inputPath: string) {
 }
 
 export async function leaveSummary(inputPath: string, departmentStaffIds: string[]) {
-  const rows = await loadAttendance(inputPath);
+  const rows = await loadAttendanceCached(inputPath);
   const grouped = new Map<string, AttendanceRow[]>();
   for (const row of rows) {
     const key = String(row.Employee_ID ?? "");

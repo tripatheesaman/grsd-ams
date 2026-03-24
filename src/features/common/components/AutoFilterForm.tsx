@@ -12,7 +12,7 @@ type Props = {
 
 export default function AutoFilterForm({
   actionPath,
-  debounceMs = 300,
+  debounceMs = 500,
   className,
   children,
 }: Props) {
@@ -26,7 +26,8 @@ export default function AutoFilterForm({
 
   const applyForm = useCallback(
     (form: HTMLFormElement) => {
-      const current = new URLSearchParams(searchParams?.toString() ?? "");
+      const existingQuery = searchParams?.toString() ?? "";
+      const current = new URLSearchParams(existingQuery);
       const formData = new FormData(form);
       const formKeys = new Set<string>();
       const nextFormValues = new URLSearchParams();
@@ -49,6 +50,10 @@ export default function AutoFilterForm({
 
       const query = current.toString();
       const href = query ? `${targetPath}?${query}` : targetPath;
+      const currentHref = existingQuery ? `${targetPath}?${existingQuery}` : targetPath;
+      if (href === currentHref) {
+        return;
+      }
 
       startTransition(() => {
         router.replace(href, { scroll: false });
