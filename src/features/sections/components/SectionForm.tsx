@@ -10,6 +10,7 @@ type Initial = {
   id?: string;
   name?: string;
   code?: string;
+  email?: string | null;
   departmentId?: string;
   description?: string | null;
   isActive?: boolean;
@@ -27,6 +28,7 @@ export default function SectionForm({ departments, initial }: { departments: Dep
     const payload = {
       name: f.get("name"),
       code: f.get("code"),
+      email: f.get("email") || null,
       departmentId: f.get("departmentId") || undefined,
       description: f.get("description") || null,
       isActive: f.get("isActive") === "on",
@@ -55,6 +57,7 @@ export default function SectionForm({ departments, initial }: { departments: Dep
     <form onSubmit={onSubmit} className="nac-card space-y-2 p-4">
       <input name="name" defaultValue={initial?.name} placeholder="Section name" required className="nac-input" />
       <input name="code" defaultValue={initial?.code} placeholder="Section code" required className="nac-input" />
+      <input name="email" type="email" defaultValue={initial?.email ?? ""} placeholder="Section email (optional)" className="nac-input" />
       <select name="departmentId" defaultValue={initial?.departmentId} className="nac-select">
         <option value="">Select department</option>
         {departments.map((d) => (

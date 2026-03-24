@@ -32,6 +32,7 @@ model Section {
   id          Int          @id @default(autoincrement())
   name        String       @unique @db.VarChar(255)
   code        String       @unique @db.VarChar(50)
+  email       String?      @db.VarChar(254)
   departmentId Int         @map("department_id")
   department  Department   @relation(fields: [departmentId], references: [id], onDelete: Cascade)
   description String?
@@ -93,4 +94,13 @@ model StaffDetail {
   updatedAt        DateTime       @updatedAt @map("updated_at")
 
   @@map("staff_details")
+}
+
+model AppSetting {
+  key       String   @id @db.VarChar(100)
+  value     String   @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("app_settings")
 }

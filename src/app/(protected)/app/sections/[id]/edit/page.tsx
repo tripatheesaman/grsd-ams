@@ -25,6 +25,7 @@ export default async function EditSectionPage({ params }: { params: Promise<{ id
           id,
           name: section.name,
           code: section.code,
+          email: section.email,
           departmentId: section.departmentId.toString(),
           description: section.description,
           isActive: section.isActive,

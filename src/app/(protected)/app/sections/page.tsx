@@ -44,6 +44,7 @@ export default async function SectionsPage({ searchParams }: { searchParams: Pro
             <tr>
               <th>Name</th>
               <th>Code</th>
+              <th>Email</th>
               <th>Department</th>
               <th>Active</th>
               <th>Actions</th>
@@ -54,6 +55,7 @@ export default async function SectionsPage({ searchParams }: { searchParams: Pro
               <tr key={s.id.toString()}>
                 <td>{s.name}</td>
                 <td>{s.code}</td>
+                <td>{s.email || "-"}</td>
                 <td>{s.department.name}</td>
                 <td>{s.isActive ? "Yes" : "No"}</td>
                 <td className="space-x-2">

@@ -949,6 +949,16 @@ export async function leaveSummary(inputPath: string, departmentStaffIds: string
   return { leave_list: leaveList };
 }
 
+type SectionMeta = {
+  sectionId: number | null;
+  sectionName: string;
+  sectionCode: string | null;
+  sectionEmail: string | null;
+  departmentName: string | null;
+  typeOfEmployment: string;
+  priority: number;
+};
+
 async function sectionMap(departmentId?: string) {
   const rows = await prisma.staffDetail.findMany({
     where: {
@@ -959,17 +969,21 @@ async function sectionMap(departmentId?: string) {
       staffid: true,
       typeOfEmployment: true,
       priority: true,
-      section: { select: { name: true } },
+      section: { select: { id: true, name: true, code: true, email: true, department: { select: { name: true } } } },
     },
   });
-  const out = new Map<string, { section: string; typeOfEmployment: string; priority: number }>();
+  const out = new Map<string, SectionMeta>();
   for (const row of rows) {
     const norm = normalizeStaffId(row.staffid);
     if (!norm) {
       continue;
     }
     out.set(norm, {
-      section: row.section?.name ?? "Unknown Section",
+      sectionId: row.section?.id ?? null,
+      sectionName: row.section?.name ?? "Unknown Section",
+      sectionCode: row.section?.code ?? null,
+      sectionEmail: row.section?.email ?? null,
+      departmentName: row.section?.department?.name ?? null,
       typeOfEmployment: row.typeOfEmployment,
       priority: row.priority ?? 999,
     });
@@ -977,30 +991,69 @@ async function sectionMap(departmentId?: string) {
   return out;
 }
 
-export async function segregationReport(inputPath: string, outputPath: string, departmentId?: string) {
+export type SegregationSectionWorkbook = {
+  sectionId: number | null;
+  sectionName: string;
+  sectionCode: string | null;
+  sectionEmail: string | null;
+  departmentName: string | null;
+  fileName: string;
+  rows: number;
+  buffer: Buffer;
+};
+
+export async function segregationSectionReports(inputPath: string, departmentId?: string): Promise<SegregationSectionWorkbook[]> {
   const rows = await loadAttendance(inputPath);
   if (rows.length === 0) {
     throw new Error("No attendance data found");
   }
   const staff = await sectionMap(departmentId);
-  const sectionRows = new Map<string, AttendanceRow[]>();
+  const sectionRows = new Map<string, { meta: SectionMeta; rows: AttendanceRow[] }>();
   for (const row of rows) {
     const normalized = normalizeStaffId(row.Employee_ID);
-    const section = normalized ? (staff.get(normalized)?.section ?? "Unknown Section") : "Unknown Section";
-    if (!sectionRows.has(section)) {
-      sectionRows.set(section, []);
+    const meta =
+      (normalized ? staff.get(normalized) : null) ?? {
+        sectionId: null,
+        sectionName: "Unknown Section",
+        sectionCode: null,
+        sectionEmail: null,
+        departmentName: null,
+        typeOfEmployment: "unknown",
+        priority: 999,
+      };
+    const bucketKey = meta.sectionId ? `id:${meta.sectionId}` : `name:${meta.sectionName}`;
+    if (!sectionRows.has(bucketKey)) {
+      sectionRows.set(bucketKey, { meta, rows: [] });
     }
-    sectionRows.get(section)?.push(row);
+    sectionRows.get(bucketKey)?.rows.push(row);
   }
 
-  const zip = new JSZip();
-  for (const [section, sectionData] of sectionRows.entries()) {
+  const reports: SegregationSectionWorkbook[] = [];
+  for (const { meta, rows: sectionData } of sectionRows.values()) {
     if (sectionData.length === 0) {
       continue;
     }
     const buf = await hrmsWorkbookBuffer(sectionData);
-    const clean = section.replace(/[^a-zA-Z0-9 _-]/g, "");
-    zip.file(`${clean}_Attendance_Report.xlsx`, buf);
+    const clean = meta.sectionName.replace(/[^a-zA-Z0-9 _-]/g, "");
+    reports.push({
+      sectionId: meta.sectionId,
+      sectionName: meta.sectionName,
+      sectionCode: meta.sectionCode,
+      sectionEmail: meta.sectionEmail,
+      departmentName: meta.departmentName,
+      fileName: `${clean}_Attendance_Report.xlsx`,
+      rows: sectionData.length,
+      buffer: buf,
+    });
+  }
+  return reports;
+}
+
+export async function segregationReport(inputPath: string, outputPath: string, departmentId?: string) {
+  const reports = await segregationSectionReports(inputPath, departmentId);
+  const zip = new JSZip();
+  for (const report of reports) {
+    zip.file(report.fileName, report.buffer);
   }
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
   const archive = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });

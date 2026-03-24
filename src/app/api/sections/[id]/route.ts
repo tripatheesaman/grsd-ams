@@ -9,6 +9,7 @@ import { mutationOriginError } from "@/server/security/origin";
 const schema = z.object({
   name: z.string().min(1),
   code: z.string().min(1),
+  email: z.string().email().optional().nullable(),
   departmentId: z.string().optional(),
   description: z.string().optional().nullable(),
   isActive: z.boolean().default(true),
@@ -57,6 +58,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     data: {
       name: parsed.data.name,
       code: parsed.data.code,
+      email: parsed.data.email ?? null,
       departmentId,
       description: parsed.data.description ?? null,
       isActive: parsed.data.isActive,

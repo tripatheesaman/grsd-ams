@@ -1,0 +1,94 @@
+"use client";
+
+import { FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
+import { withBasePath } from "@/lib/basePath";
+
+type Props = {
+  initial: {
+    smtpUsername: string;
+    hasPassword: boolean;
+    defaultSubject: string;
+    defaultBody: string;
+  };
+};
+
+export default function EmailSettingsForm({ initial }: Props) {
+  const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  async function onSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError(null);
+    setMessage(null);
+    setSaving(true);
+    const form = new FormData(e.currentTarget);
+    const payload = {
+      smtpUsername: String(form.get("smtpUsername") ?? ""),
+      smtpPassword: String(form.get("smtpPassword") ?? ""),
+      defaultSubject: String(form.get("defaultSubject") ?? ""),
+      defaultBody: String(form.get("defaultBody") ?? ""),
+    };
+    try {
+      const res = await fetch(withBasePath("/api/email/settings"), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({} as { error?: string }));
+      if (!res.ok) {
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      setMessage("Email settings saved.");
+      router.refresh();
+      (e.currentTarget.querySelector("input[name='smtpPassword']") as HTMLInputElement | null)?.setAttribute("value", "");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form onSubmit={onSubmit} className="nac-card space-y-3 p-4">
+      <div>
+        <label htmlFor="smtpUsername" className="mb-1 block text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+          SMTP Username
+        </label>
+        <input id="smtpUsername" name="smtpUsername" defaultValue={initial.smtpUsername} className="nac-input" required />
+      </div>
+      <div>
+        <label htmlFor="smtpPassword" className="mb-1 block text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+          SMTP Password {initial.hasPassword ? "(leave blank to keep current)" : ""}
+        </label>
+        <input id="smtpPassword" name="smtpPassword" type="password" className="nac-input" placeholder={initial.hasPassword ? "••••••••" : ""} />
+      </div>
+      <div>
+        <label htmlFor="defaultSubject" className="mb-1 block text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+          Default Subject Template
+        </label>
+        <input id="defaultSubject" name="defaultSubject" defaultValue={initial.defaultSubject} className="nac-input" required />
+      </div>
+      <div>
+        <label htmlFor="defaultBody" className="mb-1 block text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+          Default Body Template
+        </label>
+        <textarea id="defaultBody" name="defaultBody" defaultValue={initial.defaultBody} className="nac-textarea min-h-36" required />
+      </div>
+
+      <div className="rounded-lg bg-slate-50 p-3 text-xs text-slate-700">
+        <p className="font-semibold">Available placeholders</p>
+        <p>{"{{section_name}}, {{section_code}}, {{section_email}}, {{department_name}}, {{record_id}}, {{period}}"}</p>
+      </div>
+
+      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {message ? <p className="text-sm text-green-700">{message}</p> : null}
+      <button type="submit" className="nac-btn-primary px-4 py-2 text-sm" disabled={saving}>
+        {saving ? "Saving..." : "Save Email Settings"}
+      </button>
+    </form>
+  );
+}

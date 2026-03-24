@@ -5,6 +5,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { prisma } from "@/server/db/prisma";
 import type { SessionUser } from "@/server/types";
 import { basePath } from "@/lib/basePath";
+import { ensureRuntimeSchemaCompatibility } from "@/server/db/schemaEnsure";
 
 const SESSION_COOKIE = "nac_session";
 const realAuthSecret = process.env.AUTH_SECRET;
@@ -50,6 +51,7 @@ export async function createPasswordHash(password: string) {
 }
 
 export async function loginWithUsername(username: string, password: string) {
+  await ensureRuntimeSchemaCompatibility();
   const user = await prisma.user.findUnique({ where: { username } });
   if (!user || !user.isActive) {
     return null;
@@ -102,6 +104,7 @@ async function writeSessionCookie(token: SessionCookieValue, overrides?: { maxAg
 }
 
 export async function getSessionUser(): Promise<SessionUser | null> {
+  await ensureRuntimeSchemaCompatibility();
   const jar = await cookies();
   const raw = jar.get(SESSION_COOKIE)?.value;
   if (!raw) {
