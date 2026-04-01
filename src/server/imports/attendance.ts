@@ -761,17 +761,42 @@ function calcLeaveTotals(records: AttendanceRow[]) {
   let substituteLeaveDays = 0;
   let dutyLeaveDays = 0;
   let otherLeaveDays = 0;
+  const hasTime = (value: unknown) => {
+    const s = String(value ?? "").trim();
+    return s !== "" && s.toLowerCase() !== "nan";
+  };
+  const parseHmToMinutes = (value: unknown) => {
+    const m = /^(\d{1,2}):(\d{2})/.exec(String(value ?? "").trim());
+    if (!m) return null;
+    const h = Number.parseInt(m[1], 10);
+    const mm = Number.parseInt(m[2], 10);
+    if (!Number.isFinite(h) || !Number.isFinite(mm)) return null;
+    if (h < 0 || h > 23 || mm < 0 || mm > 59) return null;
+    return h * 60 + mm;
+  };
+  const qualifiesWeeklyOrAsteriskAllowance = (inTime: unknown, outTime: unknown) => {
+    const inMins = parseHmToMinutes(inTime);
+    const outMins = parseHmToMinutes(outTime);
+    const hasIn = inMins !== null && hasTime(inTime);
+    const hasOut = outMins !== null && hasTime(outTime);
+    if (hasIn && hasOut) return true;
+    if (hasIn && !hasOut) return inMins > 5 * 60;
+    if (!hasIn && hasOut) return outMins > 16 * 60;
+    return false;
+  };
 
   for (const row of records) {
     const status = String(row.Status ?? "").trim().toUpperCase();
+    const statusCode = status.replace(/\s+/g, "");
     if (!status) {
       continue;
     }
-    const hasWorkTime = Boolean(
-      (row.InTime && String(row.InTime).trim().toLowerCase() !== "nan") ||
-      (row.OutTime && String(row.OutTime).trim().toLowerCase() !== "nan"),
-    );
-    if (status.includes("P") || status.includes("A *")) {
+    if (statusCode === "A*") {
+      presentDays += 1;
+      if (qualifiesWeeklyOrAsteriskAllowance(row.InTime, row.OutTime)) {
+        allowanceDays += 1;
+      }
+    } else if (status.includes("P")) {
       presentDays += 1;
       allowanceDays += 1;
     } else if (status === "A") {
@@ -779,7 +804,7 @@ function calcLeaveTotals(records: AttendanceRow[]) {
     } else if (status.includes("WO") || status.includes("HO")) {
       presentDays += 1;
       weeklyOffDays += 1;
-      if (hasWorkTime) {
+      if (qualifiesWeeklyOrAsteriskAllowance(row.InTime, row.OutTime)) {
         allowanceDays += 1;
       }
     } else if (status.includes("SL")) {
@@ -1337,14 +1362,24 @@ async function fillTemplate(
     const hour = Math.floor(mins / 60);
     return hour >= 23 || hour < 5;
   };
+  const qualifiesWeeklyOrAsteriskAllowance = (inTime: unknown, outTime: unknown) => {
+    const inMins = parseHmToMinutes(inTime);
+    const outMins = parseHmToMinutes(outTime);
+    const hasIn = inMins !== null && hasTime(inTime);
+    const hasOut = outMins !== null && hasTime(outTime);
+    if (hasIn && hasOut) return true;
+    if (hasIn && !hasOut) return inMins > 5 * 60;
+    if (!hasIn && hasOut) return outMins > 16 * 60;
+    return false;
+  };
 
   type LeaveType = "pl" | "sl" | "cl" | "subl" | "duty" | "other";
   const leaveCodesByType: Record<LeaveType, Set<string>> = {
     pl: new Set(["PL", "ALCL"]),
     sl: new Set(["SL", "SLC"]),
     cl: new Set(["CL", "CLC"]),
-    subl: new Set(["SUBL", "SUB"]),
-    duty: new Set(["DUTY", "FLTD"]),
+    subl: new Set(["SUBL"]),
+    duty: new Set(["DUTY", "FLTD"]), 
     other: new Set([
       "L",
       "SLWP",
@@ -1381,8 +1416,15 @@ async function fillTemplate(
     return null;
   };
 
-  const presentStatuses = new Set(["P", "HP", "A*"]);
-  const weeklyStatuses = new Set(["WO", "HO"]);
+  const presentStatuses = new Set(["P", "HP"]);
+  const isWeeklyStatus = (statusCode: string) => {
+    const parts = String(statusCode ?? "")
+      .split("/")
+      .map((part) => part.trim())
+      .filter(Boolean);
+    const primary = parts[0] ?? "";
+    return /^(WO|HO(\(\d+\))?)\*?$/.test(primary);
+  };
   const absentStatuses = new Set(["A", "HA", "ABSC", "LUR"]);
   const presentDutyLikeStatuses = new Set(["FW", "PFW", "TR", "PTR", "LD", "MT"]);
 
@@ -1527,11 +1569,9 @@ async function fillTemplate(
       // - else => Present only
       const hoBracket = parseHoBracketStatus(rawStatus);
       if (hoBracket) {
-        if (hasTime(inTime) || hasTime(outTime) || hoBracket.hasStar) {
-          presentDays += 1;
+        presentDays += 1;
+        if (qualifiesWeeklyOrAsteriskAllowance(inTime, outTime)) {
           allowanceDays += 1;
-        } else {
-          presentDays += 1;
         }
         continue;
       }
@@ -1606,6 +1646,13 @@ async function fillTemplate(
       }
 
       // Present-like statuses (tada days)
+      if (statusCode === "A*") {
+        presentDays += 1;
+        if (qualifiesWeeklyOrAsteriskAllowance(inTime, outTime)) {
+          allowanceDays += 1;
+        }
+        continue;
+      }
       if (presentStatuses.has(statusCode) || presentDutyLikeStatuses.has(statusCode)) {
         presentDays += 1;
         allowanceDays += 1;
@@ -1613,10 +1660,10 @@ async function fillTemplate(
       }
 
       // Weekly off / holiday count as present; allowance only when any work time exists
-      if (weeklyStatuses.has(statusCode)) {
+      if (isWeeklyStatus(statusCode)) {
         presentDays += 1;
         weeklyOffDays += 1;
-        if (hasTime(inTime) || hasTime(outTime)) {
+        if (qualifiesWeeklyOrAsteriskAllowance(inTime, outTime)) {
           allowanceDays += 1;
         }
         continue;
