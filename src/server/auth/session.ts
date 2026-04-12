@@ -1,0 +1,154 @@
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import bcrypt from "bcryptjs";
+import { createHmac, timingSafeEqual } from "node:crypto";
+import { prisma } from "@/server/db/prisma";
+import type { SessionUser } from "@/server/types";
+import { basePath } from "@/lib/basePath";
+import { ensureRuntimeSchemaCompatibility } from "@/server/db/schemaEnsure";
+
+const SESSION_COOKIE = "nac_session";
+const realAuthSecret = process.env.AUTH_SECRET;
+const isNextBuildPhase = (process.env.NEXT_PHASE ?? "").toLowerCase().includes("build");
+
+// During `next build` inside Docker, secrets are typically not present.
+// Next may import server modules during build-time collection, so we must not throw here.
+// We still require the real secret when the auth logic is executed outside build phase.
+const SECRET = realAuthSecret ?? "__BUILD_TIME_AUTH_SECRET__";
+
+type SessionPayload = {
+  uid: string;
+  sig: string;
+};
+
+type SessionCookieValue = string;
+
+function sign(uid: string) {
+  if (!realAuthSecret && !isNextBuildPhase) {
+    throw new Error("AUTH_SECRET must be set");
+  }
+  return createHmac("sha256", SECRET).update(uid).digest("hex");
+}
+
+function encode(payload: SessionPayload) {
+  return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+}
+
+function decode(raw: string): SessionPayload | null {
+  try {
+    return JSON.parse(Buffer.from(raw, "base64url").toString("utf8"));
+  } catch {
+    return null;
+  }
+}
+
+export async function verifyPassword(password: string, hash: string) {
+  return bcrypt.compare(password, hash);
+}
+
+export async function createPasswordHash(password: string) {
+  return bcrypt.hash(password, 12);
+}
+
+export async function loginWithUsername(username: string, password: string) {
+  await ensureRuntimeSchemaCompatibility();
+  const user = await prisma.user.findUnique({ where: { username } });
+  if (!user || !user.isActive) {
+    return null;
+  }
+
+  const ok = await verifyPassword(password, user.password);
+  if (!ok) {
+    return null;
+  }
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { lastLogin: new Date() },
+  });
+
+  const uid = user.id.toString();
+  const sig = sign(uid);
+  const token = encode({ uid, sig });
+
+  await writeSessionCookie(token);
+
+  return user;
+}
+
+export async function logout() {
+  await writeSessionCookie("", {
+    maxAge: 0,
+  });
+}
+
+async function writeSessionCookie(token: SessionCookieValue, overrides?: { maxAge?: number }) {
+  const jar = await cookies();
+  const cookiePath = basePath || "/";
+  const cookieBase = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: overrides?.maxAge ?? 60 * 60 * 24 * 7,
+  } as const;
+
+  // Keep the app-scoped cookie and root cookie aligned to avoid stale duplicates
+  // from older deployments that used a different path.
+  const paths = cookiePath === "/" ? ["/"] : [cookiePath, "/"];
+  for (const path of paths) {
+    jar.set(SESSION_COOKIE, token, {
+      ...cookieBase,
+      path,
+    });
+  }
+}
+
+export async function getSessionUser(): Promise<SessionUser | null> {
+  await ensureRuntimeSchemaCompatibility();
+  const jar = await cookies();
+  const raw = jar.get(SESSION_COOKIE)?.value;
+  if (!raw) {
+    return null;
+  }
+
+  const payload = decode(raw);
+  if (!payload) {
+    return null;
+  }
+
+  const expected = sign(payload.uid);
+  const a = Buffer.from(expected, "utf8");
+  const b = Buffer.from(payload.sig, "utf8");
+  if (a.length !== b.length || !timingSafeEqual(a, b)) {
+    return null;
+  }
+
+  const user = await prisma.user.findUnique({ where: { id: Number(payload.uid) } });
+  if (!user || !user.isActive) {
+    return null;
+  }
+
+  return {
+    id: user.id,
+    username: user.username,
+    firstName: user.firstName,
+    lastName: user.lastName,
+    isSuperuser: user.isSuperuser,
+    isDepartmentAdmin: user.isDepartmentAdmin,
+    departmentId: user.departmentId,
+  };
+}
+
+export async function requireSessionUser() {
+  const user = await getSessionUser();
+  if (!user) {
+    redirect("/login");
+  }
+  return user;
+}
+
+export async function requireApiUser() {
+  const user = await getSessionUser();
+  return user;
+}
+
